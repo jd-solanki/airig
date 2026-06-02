@@ -287,13 +287,14 @@ No `gh` CLI dependency anywhere in the codebase.
 2. **Immutability gate:** verify release is immutable via GitHub API — error and exit if not
 3. Download `ai.zip` asset
 4. Extract to temp dir, inspect contents
-5. Interactive selection — user picks which subdirs/files to include; deselected items written to `exclude` list
-6. Conflict check — for each selected file, check `ai.json` ownership map; error if already owned by another package
-7. Write files from temp dir into `.ai/`
-8. Create per-file ownership into provider config dirs (runs link logic internally)
-9. Update `ai.json` — add package entry + update ownership map
-10. Print install summary
-11. Clean up temp dir
+5. **Skills flattening** — process `.ai/skills/` from the extracted zip using SKILL.md-presence detection (see ADR-008): recursively find every directory containing a `SKILL.md`, then write each such skill dir to `.ai/skills/<dirname>/` in the consumer repo, stripping all ancestor category directories. Non-skills content (`.ai/claude/`, `.ai/codex/`, etc.) is written verbatim.
+6. Interactive selection — user picks which subdirs/files to include; deselected items written to `exclude` list
+7. Conflict check — for each selected file, check `ai.json` ownership map; error if already owned by another package
+8. Write files from temp dir into `.ai/`
+9. Create per-file ownership into provider config dirs (runs link logic internally)
+10. Update `ai.json` — add package entry + update ownership map
+11. Print install summary
+12. Clean up temp dir
 
 ---
 
@@ -367,3 +368,25 @@ No `gh` CLI dependency anywhere in the codebase.
 **Decision:** `link` never reads or writes `ai.json`. The `ownership` map in `ai.json` is owned exclusively by `add`/`remove`.
 
 **Why:** `link` is the author's wiring command — authors run it before any package management exists. If `link` wrote to `ai.json`, it would create "local"-owned symlink entries that have no package semantics, polluting the conflict detection system. Clean separation: `link` = file system wiring, `ai.json` = package ownership tracking.
+
+---
+
+### ADR-008: SKILL.md-presence detection for skills flattening on `add`/`update`
+
+**Decision:** When `add` or `update` processes the `.ai/skills/` subtree from an extracted `ai.zip`, it uses SKILL.md-presence detection rather than depth-based heuristics. The algorithm: recursively walk the extracted `.ai/skills/` directory and identify every directory that directly contains a `SKILL.md` file. Each such directory is a "skill dir". Its entire contents are written to `.ai/skills/<dirname>/` in the consumer repo, with all ancestor category directories stripped.
+
+Examples of how source structures flatten:
+```
+# Flat (1-level)
+skills/diagnose/SKILL.md          → .ai/skills/diagnose/SKILL.md
+
+# One category deep (mattpocock style)
+skills/engineering/diagnose/SKILL.md  → .ai/skills/diagnose/SKILL.md
+
+# Multiple categories deep
+skills/a/b/c/diagnose/SKILL.md    → .ai/skills/diagnose/SKILL.md
+```
+
+Collision rule: if two skill dirs within the same package share the same `dirname` (e.g. `engineering/auth/` and `security/auth/`), `add` errors before writing anything — skill names must be unique within a package.
+
+**Why:** The `npx skills` CLI only walks 2 levels deep, which locks out authors who use deeper nesting (sub-subcategories, monorepos with extra wrapper dirs, etc.). SKILL.md-presence detection is depth-agnostic: it makes no assumption about how authors organise their source repo. The skill name (dirname) is the only identity that matters to consumers and agents. Flattening on `add`/`update` means `link` stays simple — it always sees a flat `.ai/skills/` and never needs to know about the author's source layout.
