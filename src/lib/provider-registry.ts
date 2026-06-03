@@ -20,7 +20,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
     name: 'codex',
     rules: [
       { source: '.ai/.codex/agents', target: '.codex/agents' },
-      { source: '.ai/.codex/commands', target: '.codex/prompts' },
+      { source: '.ai/.codex/prompts', target: '.codex/prompts' },
     ],
   },
 }
