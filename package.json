@@ -1,0 +1,32 @@
+{
+  "name": "ohmyai",
+  "version": "0.0.1",
+  "description": "Distribute and manage AI setups across providers",
+  "type": "module",
+  "bin": {
+    "ohmyai": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "pkg:link": "pnpm link --global",
+    "pkg:unlink": "pnpm unlink --global ohmyai"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.5.2",
+    "@octokit/rest": "^21.1.1",
+    "archiver": "^7.0.1",
+    "commander": "^14.0.0",
+    "extract-zip": "^2.0.1"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^22.15.21",
+    "tsdown": "^0.12.6",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.2"
+  }
+}
