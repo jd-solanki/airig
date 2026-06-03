@@ -2,6 +2,53 @@ import { Octokit } from '@octokit/rest'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
+// ── Consumer path (unauthenticated) ──────────────────────────────────────────
+
+export interface ResolvedRelease {
+  tag: string
+  assetDownloadUrl: string
+  immutable: boolean
+}
+
+export async function fetchReleaseInfo(
+  owner: string,
+  repo: string,
+  tag: string | undefined,
+  octokit: Octokit,
+): Promise<ResolvedRelease> {
+  let releaseTag: string
+  let immutable: boolean
+  let assets: Array<{ name: string; browser_download_url: string }>
+
+  if (tag) {
+    const { data } = await octokit.repos.getReleaseByTag({ owner, repo, tag })
+    releaseTag = data.tag_name
+    immutable = (data as unknown as { immutable?: boolean }).immutable === true
+    assets = data.assets
+  } else {
+    const { data } = await octokit.repos.getLatestRelease({ owner, repo })
+    releaseTag = data.tag_name
+    immutable = (data as unknown as { immutable?: boolean }).immutable === true
+    assets = data.assets
+  }
+
+  const asset = assets.find(a => a.name === 'ai.zip')
+  if (!asset) {
+    const ref = tag ?? 'latest'
+    throw new Error(`No ai.zip asset found in release "${ref}" of ${owner}/${repo}`)
+  }
+
+  return { tag: releaseTag, assetDownloadUrl: asset.browser_download_url, immutable }
+}
+
+export async function downloadAsset(url: string): Promise<Buffer> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Failed to download asset: HTTP ${response.status} ${response.statusText}`)
+  }
+  return Buffer.from(await response.arrayBuffer())
+}
+
 export function createOctokit(token: string): Octokit {
   return new Octokit({ auth: token })
 }
@@ -15,9 +62,18 @@ export async function getImmutableReleasesStatus(
     const { data } = await octokit.request('GET /repos/{owner}/{repo}/immutable-releases', { owner, repo })
     return data as { enabled: boolean; enforced_by_owner: boolean }
   } catch (err: unknown) {
-    // 404 means the feature has never been configured — treat as disabled
-    if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 404) {
-      return { enabled: false, enforced_by_owner: false }
+    if (err && typeof err === 'object' && 'status' in err) {
+      const status = (err as { status: number }).status
+      // 404 means the feature has never been configured — treat as disabled
+      if (status === 404) return { enabled: false, enforced_by_owner: false }
+      // The /immutable-releases endpoint requires auth even on public repos
+      if (status === 401) {
+        throw new Error(
+          'Verifying release immutability requires a GitHub token (even for public repos).\n' +
+          '  Set GITHUB_TOKEN and retry:  export GITHUB_TOKEN=ghp_...\n' +
+          '  Generate a token at: https://github.com/settings/tokens',
+        )
+      }
     }
     throw err
   }

@@ -16,6 +16,11 @@ export interface LinkResult {
   skipped: SkippedEntry[]
 }
 
+export interface LinkableEntry {
+  sourcePath: string
+  label: string
+}
+
 function isExcluded(aiRelativePath: string, excludeList: string[]): boolean {
   for (const exc of excludeList) {
     if (exc === aiRelativePath) return true
@@ -25,9 +30,41 @@ function isExcluded(aiRelativePath: string, excludeList: string[]): boolean {
   return false
 }
 
+export async function scanLinkable(providers: string[], exclude: string[]): Promise<LinkableEntry[]> {
+  const rules: SymlinkRule[] = [
+    ...providers.flatMap(p => PROVIDER_REGISTRY[p].rules),
+    SKILLS_RULE,
+  ]
+
+  const entries: LinkableEntry[] = []
+
+  for (const rule of rules) {
+    let dirEntries: string[]
+    try {
+      dirEntries = await readdir(rule.source)
+    } catch {
+      continue
+    }
+
+    for (const entry of dirEntries) {
+      const sourcePath = path.join(rule.source, entry)
+      const aiRelativePath = sourcePath.startsWith('.ai/')
+        ? sourcePath.slice('.ai/'.length)
+        : sourcePath
+
+      if (isExcluded(aiRelativePath, exclude)) continue
+
+      entries.push({ sourcePath, label: aiRelativePath })
+    }
+  }
+
+  return entries
+}
+
 export async function linkProviders(
   providers: string[],
   ownershipValue?: string,
+  allowedSources?: Set<string>,
 ): Promise<LinkResult> {
   const aiJson = await readAiJson()
 
@@ -65,6 +102,10 @@ export async function linkProviders(
 
       if (!ownershipValue && isExcluded(aiRelativePath, exclude!)) {
         skipped.push({ path: targetPath, reason: 'excluded' })
+        continue
+      }
+
+      if (allowedSources && !allowedSources.has(sourcePath)) {
         continue
       }
 

@@ -1,7 +1,8 @@
 import { Command } from 'commander'
 import { checkbox } from '@inquirer/prompts'
 import { PROVIDER_REGISTRY } from '../lib/provider-registry.js'
-import { linkProviders, type SkipReason } from '../lib/linker.js'
+import { linkProviders, scanLinkable, type SkipReason } from '../lib/linker.js'
+import { readAiJson } from '../lib/ai-json.js'
 
 const SKIP_REASON_LABEL: Record<SkipReason, string> = {
   'already-linked':          '↩',
@@ -22,6 +23,15 @@ export const linkCommand = new Command('link')
   .argument('[provider]', 'Provider to link: claude | codex')
   .option('--single-line-summary', 'Print a single summary line instead of grouped output')
   .action(async (provider: string | undefined, opts: { singleLineSummary?: boolean }) => {
+    try {
+      await runLink(provider, opts)
+    } catch (err) {
+      console.error(`✖ ${(err as Error).message}`)
+      process.exit(1)
+    }
+  })
+
+async function runLink(provider: string | undefined, opts: { singleLineSummary?: boolean }): Promise<void> {
     let providers: string[]
 
     if (provider) {
@@ -41,7 +51,25 @@ export const linkCommand = new Command('link')
       }
     }
 
-    const { linked, skipped } = await linkProviders(providers)
+    const aiJson = await readAiJson()
+    const exclude = aiJson.packages['.']?.exclude ?? []
+    const linkable = await scanLinkable(providers, exclude)
+
+    if (linkable.length === 0) {
+      console.log('No linkable files found.')
+      return
+    }
+
+    const selectedSources = await checkbox({
+      message: 'Select files to link:',
+      choices: linkable.map(e => ({ value: e.sourcePath, name: e.label, checked: true })),
+    })
+    if (selectedSources.length === 0) {
+      console.log('No files selected.')
+      return
+    }
+
+    const { linked, skipped } = await linkProviders(providers, undefined, new Set(selectedSources))
 
     if (opts.singleLineSummary) {
       console.log(`Linked ${linked.length}, skipped ${skipped.length}.`)
@@ -64,4 +92,4 @@ export const linkCommand = new Command('link')
         console.log(`  ${SKIP_REASON_LABEL[s.reason]} ${s.path}  ${SKIP_REASON_TEXT[s.reason]}`)
       }
     }
-  })
+}

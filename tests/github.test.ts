@@ -3,7 +3,12 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { Octokit } from '@octokit/rest'
-import { publishRelease, getImmutableReleasesStatus } from '../src/lib/github.js'
+import {
+  publishRelease,
+  getImmutableReleasesStatus,
+  fetchReleaseInfo,
+  downloadAsset,
+} from '../src/lib/github.js'
 
 let tmpDir: string
 
@@ -272,5 +277,111 @@ describe('publishRelease', () => {
     const url = await publishRelease({ owner: 'owner', repo: 'repo', tag: 'v2.0.0', assetPath, octokit })
 
     expect(url).toBe(expectedUrl)
+  })
+})
+
+// ── Consumer path ─────────────────────────────────────────────────────────────
+
+function makeAsset(name: string, url: string) {
+  return { name, browser_download_url: url }
+}
+
+describe('fetchReleaseInfo', () => {
+  it('resolves the latest release and surfaces the immutable flag', async () => {
+    const octokit = {
+      repos: {
+        getLatestRelease: vi.fn().mockResolvedValue({
+          data: { tag_name: 'v1.0.0', immutable: true, assets: [makeAsset('ai.zip', 'https://example.com/ai.zip')] },
+        }),
+      },
+    } as unknown as Octokit
+
+    const result = await fetchReleaseInfo('owner', 'repo', undefined, octokit)
+
+    expect(result).toEqual({ tag: 'v1.0.0', assetDownloadUrl: 'https://example.com/ai.zip', immutable: true })
+  })
+
+  it('fetches a specific release when a tag is given', async () => {
+    const octokit = {
+      repos: {
+        getReleaseByTag: vi.fn().mockResolvedValue({
+          data: { tag_name: 'v2.0.0', immutable: false, assets: [makeAsset('ai.zip', 'https://example.com/v2/ai.zip')] },
+        }),
+      },
+    } as unknown as Octokit
+
+    const result = await fetchReleaseInfo('owner', 'repo', 'v2.0.0', octokit)
+
+    expect(result).toEqual({ tag: 'v2.0.0', assetDownloadUrl: 'https://example.com/v2/ai.zip', immutable: false })
+  })
+
+  it('treats a missing immutable field as false', async () => {
+    const octokit = {
+      repos: {
+        getLatestRelease: vi.fn().mockResolvedValue({
+          data: { tag_name: 'v1.0.0', assets: [makeAsset('ai.zip', 'https://example.com/ai.zip')] },
+        }),
+      },
+    } as unknown as Octokit
+
+    const result = await fetchReleaseInfo('owner', 'repo', undefined, octokit)
+
+    expect(result.immutable).toBe(false)
+  })
+
+  it('throws when no ai.zip asset is found in the release', async () => {
+    const octokit = {
+      repos: {
+        getLatestRelease: vi.fn().mockResolvedValue({
+          data: { tag_name: 'v1.0.0', immutable: true, assets: [makeAsset('other.zip', 'https://example.com/other.zip')] },
+        }),
+      },
+    } as unknown as Octokit
+
+    await expect(fetchReleaseInfo('owner', 'repo', undefined, octokit)).rejects.toThrow('No ai.zip asset found')
+  })
+})
+
+
+describe('getImmutableReleasesStatus', () => {
+  it('throws a friendly message on 401 — endpoint requires auth even for public repos', async () => {
+    const authError = Object.assign(new Error('Requires authentication'), { status: 401 })
+    const octokit = {
+      request: vi.fn().mockRejectedValue(authError),
+    } as unknown as Octokit
+
+    await expect(getImmutableReleasesStatus('owner', 'repo', octokit)).rejects.toThrow('GITHUB_TOKEN')
+  })
+})
+
+describe('downloadAsset', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('returns the response body as a Buffer', async () => {
+    // Use Uint8Array so the backing ArrayBuffer is not a shared pool slice
+    const expected = [102, 97, 107, 101]  // 'fake'
+    const ab = new Uint8Array(expected).buffer
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => ab,
+    } as unknown as Response))
+
+    const result = await downloadAsset('https://example.com/ai.zip')
+
+    expect(Buffer.isBuffer(result)).toBe(true)
+    expect(Array.from(result)).toEqual(expected)
+  })
+
+  it('throws on a non-OK HTTP response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+    } as unknown as Response))
+
+    await expect(downloadAsset('https://example.com/ai.zip')).rejects.toThrow('HTTP 404')
   })
 })
