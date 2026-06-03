@@ -10,7 +10,7 @@ Four commands ship in v1:
 
 | Command | Who uses it | Needs network | Needs auth |
 |---|---|---|---|
-| `link` | Author | No | No |
+| `link` | Author, Consumer | No | No |
 | `publish` | Author | Yes (GitHub API) | Yes (`GITHUB_TOKEN`) |
 | `add` | Consumer | Yes (GitHub API) | No (public repos) |
 | `remove` | Consumer | No | No |
@@ -29,6 +29,7 @@ Four commands ship in v1:
 | GitHub API | @octokit/rest |
 | Zip creation | archiver |
 | Zip extraction | extract-zip |
+| Interactive prompts | @inquirer/prompts |
 | Runtime | Node.js (`"type": "module"`) |
 
 `package.json` essentials:
@@ -111,14 +112,14 @@ Defined in `src/lib/provider-registry.ts` as a static TypeScript object. Adding 
 
 **Claude:**
 ```
-.ai/claude/agents/    → .claude/agents/    (per-file ownership)
-.ai/claude/commands/  → .claude/commands/  (per-file ownership)
+.ai/.claude/agents/    → .claude/agents/    (per-file ownership)
+.ai/.claude/commands/  → .claude/commands/  (per-file ownership)
 ```
 
 **Codex:**
 ```
-.ai/codex/agents/    → .codex/agents/    (per-file ownership)
-.ai/codex/commands/  → .codex/prompts/   (per-file ownership)
+.ai/.codex/agents/    → .codex/agents/    (per-file ownership)
+.ai/.codex/commands/  → .codex/prompts/   (per-file ownership)
 ```
 
 ### Registry shape
@@ -138,15 +139,15 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
   claude: {
     name: 'claude',
     rules: [
-      { source: '.ai/claude/agents',   target: '.claude/agents' },
-      { source: '.ai/claude/commands', target: '.claude/commands' },
+      { source: '.ai/.claude/agents',   target: '.claude/agents' },
+      { source: '.ai/.claude/commands', target: '.claude/commands' },
     ],
   },
   codex: {
     name: 'codex',
     rules: [
-      { source: '.ai/codex/agents',   target: '.codex/agents' },
-      { source: '.ai/codex/commands', target: '.codex/prompts' },
+      { source: '.ai/.codex/agents',   target: '.codex/agents' },
+      { source: '.ai/.codex/commands', target: '.codex/prompts' },
     ],
   },
 }
@@ -166,10 +167,10 @@ export const SKILLS_RULE: SymlinkRule = {
 .ai/
   ai.json
   skills/           ← provider-agnostic; linked to .agents/skills/ per-file
-  claude/
+  .claude/
     agents/
     commands/
-  codex/
+  .codex/
     agents/
     commands/       ← linked to .codex/prompts/
 ```
@@ -181,35 +182,46 @@ export const SKILLS_RULE: SymlinkRule = {
 ```typescript
 interface AiJson {
   packages: Record<string, PackageEntry>
-  ownership: Record<string, string>   // target path → "owner/repo@version"
+  ownership: Record<string, string>   // symlink target path → "owner/repo@version" | ".ai/-relative source path"
 }
 
 interface PackageEntry {
-  version: string          // always exact, e.g. "1.2.0"
+  version: string          // exact version e.g. "1.2.0", or "*" for the local "." package
   exclude?: string[]       // paths relative to .ai/, e.g. ["skills/python-pro.md"]
 }
 ```
+
+Package keys are either `"owner/repo"` (remote package) or `"."` (local package — the author's own `.ai/` directory). The `"."` key uses `version: "*"` as a sentinel meaning "always current, no pinning." The `exclude` list on `"."` allows selective linking — specific files or subdirs the author wants to skip.
 
 Example:
 ```json
 {
   "packages": {
+    ".": {
+      "version": "*",
+      "exclude": [".claude/commands/scratch.md"]
+    },
     "yourname/setup": {
       "version": "1.2.0",
-      "exclude": ["skills/python-pro.md", "claude/agents/"]
+      "exclude": ["skills/python-pro.md", ".claude/agents/"]
     }
   },
   "ownership": {
-    ".claude/agents/reviewer.md": "yourname/setup@1.2.0",
-    ".agents/skills/tdd/SKILL.md": "yourname/setup@1.2.0"
+    ".claude/agents/reviewer.md": ".ai/.claude/agents/reviewer.md",
+    ".agents/skills/tdd/SKILL.md": "yourname/setup@1.2.0",
+    ".codex/agents/reviewer.md": ".ai/.codex/agents/reviewer.md"
   }
 }
 ```
 
 **Rules:**
-- `ownership` is written and owned by `add`/`remove`. Never written by `link`.
-- Versions are always exact — no semver ranges.
-- Immutability is always verified online via the GitHub API — on every `add` and `remove`. No offline attestation cache.
+- Ownership keys are symlink target paths (e.g. `.claude/agents/reviewer.md`).
+- Ownership values are one of two forms:
+  - `"owner/repo@version"` — written by `add` for remote package symlinks
+  - `".ai/relative/source/path"` — written by `link` for local symlinks; the explicit path lets any reader trace exactly what the symlink points to
+- `add` treats `.ai/`-prefixed entries as overwriteable — warns the user and replaces the entry with the package value.
+- Versions are always exact for remote packages — no semver ranges. `"*"` is only valid for the `"."` local package.
+- Immutability is always verified online via the GitHub API — on every `add`. No offline attestation cache.
 
 ---
 
@@ -234,26 +246,31 @@ No `gh` CLI dependency anywhere in the codebase.
 
 ## Command Specifications
 
-### `link <provider>`
+### `link [provider]`
 
-**Purpose:** Author's primary command. Wires `.ai/` into provider config dirs via per-file ownership. Fully local — no network, no `ai.json` reads or writes.
+**Purpose:** Wires `.ai/` into provider config dirs via per-file symlinks. Fully local — no network. Writes to `ai.json` — exact behaviour depends on the caller: standalone invocations write the `"."` package entry and `.ai/`-relative source path ownership entries; when called internally by `add` with an `ownershipValue`, writes package-owned entries only and skips `packages["."]` handling entirely.
 
 **Behavior:**
-1. Validate `provider` is in `PROVIDER_REGISTRY` — error if unknown
-2. For each rule in `PROVIDER_REGISTRY[provider].rules` + `SKILLS_RULE`:
-   - Walk source dir (e.g. `.ai/claude/agents/`)
+1. If `[provider]` is omitted, show a multi-select prompt listing all registered providers — user selects one or more
+2. If `[provider]` is given, validate it is in `PROVIDER_REGISTRY` — error if unknown
+3. For each selected provider, for each rule in `PROVIDER_REGISTRY[provider].rules` + `SKILLS_RULE`:
+   - Walk source dir (e.g. `.ai/.claude/agents/`)
    - For each file found, create a symlink: `<target>/<filename>` → `<source>/<filename>`
    - Create target dir if it doesn't exist
    - If symlink already exists and points to the correct source: skip (idempotent)
    - If symlink already exists and points elsewhere: warn, skip (do not overwrite)
    - If a real file (not symlink) exists at the target path: warn, skip
-3. Print summary: linked N files, skipped M
+4. Write ownership entries for each symlink created. Behaviour depends on whether an `ownershipValue` was passed by the caller:
+   - **Standalone (no `ownershipValue`):** ensure `packages["."]` entry exists in `ai.json` with `version: "*"` (create `ai.json` if absent); skip files matching the `exclude` list on `packages["."]` if present; write `".ai/<relative-source-path>"` as the ownership value for each symlink
+   - **Called by `add` (with `ownershipValue`):** write the provided value (e.g. `"owner/repo@version"`) as the ownership entry for each symlink; skip `packages["."]` handling and the exclude list entirely
+5. Print summary: linked N files, skipped M
 
 **Key design decisions:**
-- Per-file ownership, not directory-level — preserves unmanaged files in target dirs
-- `link` never touches `ai.json` — it is `ai.json`-agnostic
+- Provider argument is optional — omitting it opens multi-select so users can wire multiple providers in one run
+- Per-file symlinks, not directory-level — preserves unmanaged files in target dirs
+- Uses `"."` as the local package key (with `version: "*"` and optional `exclude`) so the `packages` section uniformly lists all managed setups; `remove "."` identifies local entries by their `.ai/`-prefixed ownership value
 - Idempotent — safe to run repeatedly
-- Skills are always linked regardless of provider argument (shared, provider-agnostic)
+- Skills (`.ai/skills/`) are always linked regardless of which providers are selected
 
 ---
 
@@ -280,36 +297,43 @@ No `gh` CLI dependency anywhere in the codebase.
 
 ### `add <owner/repo>[@version]`
 
-**Purpose:** Consumer command. Downloads an immutable release, writes files to `.ai/`, creates ownership, updates `ai.json`.
+**Purpose:** Consumer command. Downloads an immutable release, writes files to `.ai/`, runs the `link` interactive flow, and updates `ai.json` with exact version and symlink ownership.
 
 **Behavior:**
 1. If no `@version`, resolve latest immutable release via GitHub API
 2. **Immutability gate:** verify release is immutable via GitHub API — error and exit if not
 3. Download `ai.zip` asset
 4. Extract to temp dir, inspect contents
-5. **Skills flattening** — process `.ai/skills/` from the extracted zip using SKILL.md-presence detection (see ADR-008): recursively find every directory containing a `SKILL.md`, then write each such skill dir to `.ai/skills/<dirname>/` in the consumer repo, stripping all ancestor category directories. Non-skills content (`.ai/claude/`, `.ai/codex/`, etc.) is written verbatim.
-6. Interactive selection — user picks which subdirs/files to include; deselected items written to `exclude` list
-7. Conflict check — for each selected file, check `ai.json` ownership map; error if already owned by another package
-8. Write files from temp dir into `.ai/`
-9. Create per-file ownership into provider config dirs (runs link logic internally)
-10. Update `ai.json` — add package entry + update ownership map
-11. Print install summary
-12. Clean up temp dir
+5. **Skills flattening** — process `.ai/skills/` from the extracted zip using SKILL.md-presence detection (see ADR-008): recursively find every directory containing a `SKILL.md`, then write each such skill dir to `.ai/skills/<dirname>/` in the consumer repo, stripping all ancestor category directories. Non-skills content (`.ai/.claude/`, `.ai/.codex/`, etc.) is written verbatim.
+6. **Artifact selection** — user picks which subdirs/files to include; deselected items written to `exclude` list
+7. **Provider selection** — multi-select prompt listing all registered providers; user picks which to wire
+8. **Conflict check** — for each selected artifact × selected provider, compute target symlink path, check against `ai.json` ownership map:
+   - **Package-owned entry** (value = `"owner/repo@version"`) → error with conflict report before writing anything
+   - **Locally-managed entry** (value starts with `.ai/`) → warn the user ("previously locally-managed, now owned by `owner/repo@version`") and proceed; the entry will be overwritten at step 10
+9. Write files from temp dir into `.ai/`
+10. Run link for selected providers, passing `"owner/repo@version"` as the `ownershipValue` — link creates symlinks and writes package-owned entries directly to `ai.json`
+11. Update `ai.json` — add package entry (version + exclude list); ownership entries are already written by step 10
+12. Print install summary: files added to `.ai/`, symlinks created (per provider), files skipped (excluded), locally-managed entries overwritten with a warning (if any), conflicts that blocked the install (if any)
+13. Clean up temp dir
 
 ---
 
-### `remove <owner/repo>`
+### `remove <owner/repo|.>`
 
-**Purpose:** Consumer command. Removes a package's files from `.ai/`, deletes its ownership, updates `ai.json`.
+**Purpose:** Uninstalls a package — removes its symlinks from provider config dirs, optionally deletes its files from `.ai/`, and cleans up `ai.json`. Accepts either a remote package key (`owner/repo`) or the local package key (`.`). No network calls required.
 
 **Behavior:**
-1. Look up package in `ai.json` — error if not found
-2. Remove all ownership owned by this package (from `ownership` map)
-3. Delete package files from `.ai/`
-4. Remove package entry from `ai.json`
-5. Print removal summary
+1. Look up the package key in `ai.json` — error if not found
+2. Collect all owned symlink target paths from `ownership`:
+   - **Remote packages (`owner/repo`):** entries where value = `"owner/repo@version"` for this package
+   - **Local package (`"."`):** entries where value starts with `.ai/`
+3. Delete each collected symlink from its target path (e.g. `.claude/agents/reviewer.md`, `.codex/prompts/foo.md`, `.agents/skills/tdd/SKILL.md`)
+4. **Remote packages only:** delete the package's files from `.ai/`
+5. **Local package (`"."`):** skip file deletion — `.ai/` files are the author's own; only symlinks are removed
+6. Remove the package entry and all its ownership entries from `ai.json`
+7. Print removal summary: symlinks removed, files deleted (remote only)
 
-**Note:** Atomic — `ai.json` is updated in the same operation as file deletion.
+**Operation order:** symlinks → files (remote only) → `ai.json`. If interrupted before `ai.json` is written, the files and symlinks are already gone; re-running `remove` will find no ownership entries for the missing symlinks and exit cleanly.
 
 ---
 
@@ -325,9 +349,9 @@ No `gh` CLI dependency anywhere in the codebase.
 
 ### ADR-002: Skills live at `.ai/skills/` (provider-agnostic top-level)
 
-**Decision:** Skills are not nested under `.ai/<provider>/skills/` — they live at `.ai/skills/` and are shared across providers.
+**Decision:** Skills are not nested under `.ai/<provider_directory>/skills/` — they live at `.ai/skills/` and are shared across providers.
 
-**Why:** Multiple providers (claude, codex, and future providers) all read from `.agents/skills/`. If skills were per-provider, `link claude` and `link codex` would both try to create `.agents/skills/ → .ai/<provider>/skills/` — a directory symlink conflict. A shared `.ai/skills/` source avoids this entirely and is honest: skills are provider-agnostic Markdown files.
+**Why:** Multiple providers (claude, codex, and future providers) all read from `.agents/skills/`. If skills were per-provider, `link claude` and `link codex` would both try to create `.agents/skills/ → .ai/<provider_directory>/skills/` — a directory symlink conflict. A shared `.ai/skills/` source avoids this entirely and is honest: skills are provider-agnostic Markdown files.
 
 ---
 
@@ -363,11 +387,11 @@ No `gh` CLI dependency anywhere in the codebase.
 
 ---
 
-### ADR-007: `link` is `ai.json`-agnostic
+### ADR-007: `link` writes `"."` package entry and explicit source paths to `ai.json`
 
-**Decision:** `link` never reads or writes `ai.json`. The `ownership` map in `ai.json` is owned exclusively by `add`/`remove`.
+**Decision:** `link` writes a `packages["."]` entry (`version: "*"`, optional `exclude`) to `ai.json` and records the explicit `.ai/`-relative source path as the ownership value for each symlink (e.g. `".claude/agents/reviewer.md": ".ai/.claude/agents/reviewer.md"`). It creates `ai.json` if absent.
 
-**Why:** `link` is the author's wiring command — authors run it before any package management exists. If `link` wrote to `ai.json`, it would create "local"-owned symlink entries that have no package semantics, polluting the conflict detection system. Clean separation: `link` = file system wiring, `ai.json` = package ownership tracking.
+**Why:** The `"."` package key (mirroring how pnpm workspaces treat the root) makes `packages` the uniform list of all managed setups — local and remote — so consumers can see at a glance what is installed. The `exclude` list on `"."` enables selective linking: the author can skip specific files without unlinking everything. Ownership values remain explicit source paths (not a package reference like `".@*"`) so any reader can trace exactly what each symlink points to without resolving the package. `add` distinguishes local entries from remote ones by the `.ai/` prefix and treats them as overwriteable with a warning. `remove "."` deletes symlinks for all entries whose ownership value starts with `.ai/` — no separate local-entry registry needed.
 
 ---
 
@@ -390,3 +414,19 @@ skills/a/b/c/diagnose/SKILL.md    → .ai/skills/diagnose/SKILL.md
 Collision rule: if two skill dirs within the same package share the same `dirname` (e.g. `engineering/auth/` and `security/auth/`), `add` errors before writing anything — skill names must be unique within a package.
 
 **Why:** The `npx skills` CLI only walks 2 levels deep, which locks out authors who use deeper nesting (sub-subcategories, monorepos with extra wrapper dirs, etc.). SKILL.md-presence detection is depth-agnostic: it makes no assumption about how authors organise their source repo. The skill name (dirname) is the only identity that matters to consumers and agents. Flattening on `add`/`update` means `link` stays simple — it always sees a flat `.ai/skills/` and never needs to know about the author's source layout.
+
+---
+
+### ADR-009: `link` provider argument is optional with interactive multi-select fallback
+
+**Decision:** `link [provider]` — if no provider is given, a multi-select prompt lists all registered providers and the user picks one or more. If a provider name is given directly, it links that provider without prompting.
+
+**Why:** The single-provider argument form is convenient for scripting and for authors who know exactly what they want. The interactive fallback removes the need to know provider names upfront — especially useful at the end of `add` where a first-time consumer may not know which providers to wire. Combining both in one command avoids a separate `link --interactive` flag or a second command.
+
+---
+
+### ADR-010: `add` triggers the `link` interactive flow as its final step
+
+**Decision:** After writing files to `.ai/`, `add` triggers the `link` multi-select prompt so the consumer can wire their chosen providers immediately, in the same command invocation.
+
+**Why:** A consumer who runs `add` almost always wants to wire the installed setup straight away. Requiring a separate `link` invocation adds a step that is easily forgotten, leaving the consumer wondering why their AI tool doesn't see the new files. Embedding the `link` flow at the end of `add` makes the full install a single interaction. Because `link` is idempotent, running it again later is harmless.
