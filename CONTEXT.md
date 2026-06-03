@@ -84,7 +84,7 @@ The `exclude` list is written by the CLI after interactive selection during `add
 The CLI prompt shown during `npx ohmyai add` that lets consumers pick which artifact subdirectories and individual files to install. Deselected items are written to the `exclude` list in `ai.json`. Consumers never edit the exclude list manually — the CLI owns it.
 
 ### Command Interaction Model
-`add` is interactive — triggers the Interactive Selection prompt so consumers choose which artifacts to install. `update` is explicit — requires a version argument, never auto-resolves, never prompts. `check` is unattended-safe — read-only, prints available newer immutable releases, safe in CI.
+`add` is interactive — triggers the Interactive Selection prompt so consumers choose which artifacts to install. `remove` is interactive — shows a checkbox of all currently-installed artifacts pre-checked; selecting a subset removes only those and adds them to the `exclude` list (local-only, no re-download needed); selecting all does a full uninstall and removes the package entry entirely. `update` is explicit — requires a version argument, never auto-resolves, never prompts. `check` is unattended-safe — read-only, prints available newer immutable releases, safe in CI.
 
 ### Update Warnings
 Informational messages printed during `npx ohmyai check` for excluded artifacts that have changed upstream:
@@ -143,7 +143,7 @@ Running `npx ohmyai check [owner/repo]`:
 npx ohmyai add <owner/repo>[@version]    # fetch ai.zip from immutable GitHub release, write to .ai/, update ai.json
 npx ohmyai check [owner/repo]            # report newer immutable releases available, read-only
 npx ohmyai update <owner/repo>@<version> # pull specific immutable release, replace/add/delete files, print summary
-npx ohmyai remove <owner/repo>           # remove package artifacts from .ai/, update ai.json
+npx ohmyai remove <owner/repo>           # interactive: select artifacts to remove; partial = updates exclude list, all = full uninstall
 npx ohmyai sync                          # restore .ai/ from ai.json (re-fetch pinned immutable releases, verify attestations)
 npx ohmyai link [provider]               # symlink .ai/<provider>/ subdirs → provider config dirs; omit provider for multi-select (local only)
 npx ohmyai publish                       # create draft release, attach ai.zip, publish as immutable release

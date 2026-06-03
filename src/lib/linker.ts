@@ -1,4 +1,4 @@
-import { readdir, symlink, mkdir, lstat, readlink } from 'node:fs/promises'
+import { readdir, symlink, mkdir, lstat, readlink, unlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { PROVIDER_REGISTRY, SKILLS_RULE, type SymlinkRule } from './provider-registry.js'
@@ -28,6 +28,17 @@ function isExcluded(aiRelativePath: string, excludeList: string[]): boolean {
     if (aiRelativePath.startsWith(dir)) return true
   }
   return false
+}
+
+export async function unlinkFiles(targetPaths: string[]): Promise<void> {
+  for (const targetPath of targetPaths) {
+    try {
+      const stat = await lstat(targetPath)
+      if (stat.isSymbolicLink()) await unlink(targetPath)
+    } catch {
+      // already gone — idempotent
+    }
+  }
 }
 
 export async function scanLinkable(providers: string[], exclude: string[]): Promise<LinkableEntry[]> {

@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, lstat, symlink, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { linkProviders } from '../src/lib/linker.js'
+import { linkProviders, unlinkFiles } from '../src/lib/linker.js'
 import { readAiJson } from '../src/lib/ai-json.js'
 
 let tmpDir: string
@@ -127,5 +127,40 @@ describe('linkProviders', () => {
     expect(result.skipped).toEqual([{ path: '.claude/agents/scratch.md', reason: 'excluded' }])
     expect(existsSync('.claude/agents/agent.md')).toBe(true)
     expect(existsSync('.claude/agents/scratch.md')).toBe(false)
+  })
+})
+
+describe('unlinkFiles', () => {
+  it('removes a file symlink', async () => {
+    await makeFile('.ai/.claude/agents/agent.md')
+    await mkdir('.claude/agents', { recursive: true })
+    await symlink(path.resolve('.ai/.claude/agents/agent.md'), '.claude/agents/agent.md')
+
+    await unlinkFiles(['.claude/agents/agent.md'])
+
+    expect(existsSync('.claude/agents/agent.md')).toBe(false)
+  })
+
+  it('removes a directory symlink (skills)', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md')
+    await mkdir('.agents/skills', { recursive: true })
+    await symlink(path.resolve('.ai/skills/tdd'), '.agents/skills/tdd')
+
+    await unlinkFiles(['.agents/skills/tdd'])
+
+    expect(existsSync('.agents/skills/tdd')).toBe(false)
+    expect(existsSync('.ai/skills/tdd/SKILL.md')).toBe(true)
+  })
+
+  it('is idempotent — no error when symlink is already gone', async () => {
+    await expect(unlinkFiles(['.claude/agents/nonexistent.md'])).resolves.not.toThrow()
+  })
+
+  it('does not remove real files, only symlinks', async () => {
+    await makeFile('.claude/agents/real.md', 'not a symlink')
+
+    await unlinkFiles(['.claude/agents/real.md'])
+
+    expect(existsSync('.claude/agents/real.md')).toBe(true)
   })
 })

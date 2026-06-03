@@ -324,16 +324,23 @@ No `gh` CLI dependency anywhere in the codebase.
 
 **Behavior:**
 1. Look up the package key in `ai.json` — error if not found
-2. Collect all owned symlink target paths from `ownership`:
+2. Collect all owned entries from `ownership`:
    - **Remote packages (`owner/repo`):** entries where value = `"owner/repo@version"` for this package
    - **Local package (`"."`):** entries where value starts with `.ai/`
-3. Delete each collected symlink from its target path (e.g. `.claude/agents/reviewer.md`, `.codex/prompts/foo.md`, `.agents/skills/tdd/SKILL.md`)
-4. **Remote packages only:** delete the package's files from `.ai/`
-5. **Local package (`"."`):** skip file deletion — `.ai/` files are the author's own; only symlinks are removed
-6. Remove the package entry and all its ownership entries from `ai.json`
-7. Print removal summary: symlinks removed, files deleted (remote only)
+3. **Interactive artifact selection:** show a checkbox listing all owned artifacts as `.ai/`-relative paths (reverse-mapped from symlink target paths via the provider registry), all pre-checked
+4. If the user selects nothing → print "Nothing removed." and exit cleanly
+5. **Full removal (all artifacts selected):**
+   - Delete all owned symlinks from their target paths
+   - **Remote packages only:** delete all package files from `.ai/`
+   - Remove the package entry and all its ownership entries from `ai.json`
+6. **Partial removal (subset selected):**
+   - Delete symlinks only for selected artifacts
+   - **Remote packages only:** delete `.ai/` files only for selected artifacts
+   - Remove only the selected entries from `ownership`
+   - Append the removed artifact paths to `exclude` in the package entry — preserving the package entry itself
+7. Print removal summary: symlinks removed, files deleted (remote only), artifacts added to exclude (partial only)
 
-**Operation order:** symlinks → files (remote only) → `ai.json`. If interrupted before `ai.json` is written, the files and symlinks are already gone; re-running `remove` will find no ownership entries for the missing symlinks and exit cleanly.
+**Operation order:** symlinks → files (remote only) → `ai.json`. If interrupted before `ai.json` is written, the files and symlinks are already gone; re-running `remove` will find no ownership entries for the missing items and treat them as already removed.
 
 ---
 
@@ -430,3 +437,11 @@ Collision rule: if two skill dirs within the same package share the same `dirnam
 **Decision:** After writing files to `.ai/`, `add` triggers the `link` multi-select prompt so the consumer can wire their chosen providers immediately, in the same command invocation.
 
 **Why:** A consumer who runs `add` almost always wants to wire the installed setup straight away. Requiring a separate `link` invocation adds a step that is easily forgotten, leaving the consumer wondering why their AI tool doesn't see the new files. Embedding the `link` flow at the end of `add` makes the full install a single interaction. Because `link` is idempotent, running it again later is harmless.
+
+---
+
+### ADR-011: `remove` is interactive with partial artifact selection support
+
+**Decision:** `remove owner/repo` shows a checkbox of all currently-installed artifacts pre-checked. Selecting all does a full uninstall (package entry removed). Selecting a subset removes only those artifacts, adds them to the `exclude` list in `ai.json`, and preserves the package entry. No new command (`unlink` or similar) is introduced.
+
+**Why:** Without partial removal, trimming an install (e.g. from 5 skills to 2) requires `remove` + `add` — a round-trip that re-downloads the release. Since `ai.json` already tracks installed artifacts via `ownership` and the `exclude` list already exists for partial installs, partial removal is fully local and costs nothing extra. A separate `unlink` command was considered but rejected: `link` means "wire `.ai/` files to provider config dirs via symlinks", so `unlink` would naturally mean "remove those symlinks" — not "remove individual package artifacts". That naming collision would confuse users. Extending `remove` with interactive selection keeps the command surface minimal and the semantics unambiguous.
