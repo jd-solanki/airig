@@ -171,6 +171,14 @@ npx ohmyai publish                       # create draft release, attach ai.zip, 
 
 ---
 
+## Useful Links
+
+- [GitHub Immutable Releases Concepts](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
+- [Preventing Changes to Your Releases](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/preventing-changes-to-your-releases)
+- [Verifying the Integrity of a Release](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/verifying-the-integrity-of-a-release)
+
+---
+
 ## Key Differences from `npx skills`
 
 | Concern | `npx skills` | `ohmyai` |
