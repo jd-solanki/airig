@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PROVIDER_REGISTRY, SKILLS_RULE } from './provider-registry.js'
+import { PROVIDER_REGISTRY, SKILLS_RULE } from '../src/lib/provider-registry.js'
 
 describe('PROVIDER_REGISTRY', () => {
   it('has claude and codex providers', () => {

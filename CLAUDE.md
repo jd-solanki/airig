@@ -1,0 +1,2 @@
+- Prefer "why" over "what" for commenting. "why" comments explains business requirement of code & ADR.
+- Prioritize code organization, modularity & less complexity.
