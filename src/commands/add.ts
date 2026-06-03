@@ -198,13 +198,12 @@ async function runAdd(pkg: string): Promise<void> {
 
     await copyArtifactsToAi(extractedAiDir, selectedArtifacts)
 
-    const linkResult = await linkProviders(selectedProviders, ownershipValue)
+    const linkResult = await linkProviders(aiJson, selectedProviders, ownershipValue)
 
-    const updatedAiJson = await readAiJson()
     const entry: PackageEntry = { version: resolvedTag }
     if (excludedArtifacts.length > 0) entry.exclude = excludedArtifacts
-    addPackage(updatedAiJson, `${owner}/${repo}`, entry)
-    await writeAiJson(updatedAiJson)
+    addPackage(aiJson, `${owner}/${repo}`, entry)
+    await writeAiJson(aiJson)
 
     console.log(`\nInstalled ${owner}/${repo}@${resolvedTag}`)
     if (linkResult.linked.length > 0) {

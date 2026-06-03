@@ -1,7 +1,7 @@
 import { readdir, symlink, mkdir, lstat, readlink, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { rulesFor, listArtifacts } from './provider-registry.js'
-import { readAiJson, writeAiJson } from './ai-json.js'
+import type { AiJson } from './ai-json.js'
 
 export type SkipReason = 'already-linked' | 'conflict-real-file' | 'conflict-wrong-symlink' | 'excluded'
 
@@ -48,15 +48,11 @@ export async function scanLinkable(providers: string[], exclude: string[]): Prom
 }
 
 export async function linkProviders(
+  aiJson: AiJson,
   providers: string[],
   ownershipValue?: string,
   allowedSources?: Set<string>,
 ): Promise<LinkResult> {
-  const aiJson = await readAiJson()
-
-  if (!ownershipValue) {
-    aiJson.packages['.'] ??= { version: '*' }
-  }
 
   const exclude = (!ownershipValue && aiJson.packages['.']?.exclude) ? aiJson.packages['.'].exclude : []
 
@@ -123,6 +119,5 @@ export async function linkProviders(
     }
   }
 
-  await writeAiJson(aiJson)
   return { linked, skipped }
 }

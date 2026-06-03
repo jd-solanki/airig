@@ -2,7 +2,7 @@ import { Command } from 'commander'
 import { checkbox } from '@inquirer/prompts'
 import { PROVIDER_REGISTRY } from '../lib/provider-registry.js'
 import { linkProviders, scanLinkable, type SkipReason } from '../lib/linker.js'
-import { readAiJson } from '../lib/ai-json.js'
+import { readAiJson, writeAiJson } from '../lib/ai-json.js'
 
 const SKIP_REASON_LABEL: Record<SkipReason, string> = {
   'already-linked':          '↩',
@@ -52,7 +52,8 @@ async function runLink(provider: string | undefined, opts: { singleLineSummary?:
     }
 
     const aiJson = await readAiJson()
-    const exclude = aiJson.packages['.']?.exclude ?? []
+    aiJson.packages['.'] ??= { version: '*' }
+    const exclude = aiJson.packages['.'].exclude ?? []
     const linkable = await scanLinkable(providers, exclude)
 
     if (linkable.length === 0) {
@@ -69,7 +70,8 @@ async function runLink(provider: string | undefined, opts: { singleLineSummary?:
       return
     }
 
-    const { linked, skipped } = await linkProviders(providers, undefined, new Set(selectedSources))
+    const { linked, skipped } = await linkProviders(aiJson, providers, undefined, new Set(selectedSources))
+    await writeAiJson(aiJson)
 
     if (opts.singleLineSummary) {
       console.log(`Linked ${linked.length}, skipped ${skipped.length}.`)

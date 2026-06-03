@@ -41,6 +41,12 @@ export async function writeAiJson(data: AiJson): Promise<void> {
   await writeFile(AI_JSON_PATH, JSON.stringify(data, null, 2) + '\n', 'utf-8')
 }
 
+export async function updateAiJson(fn: (data: AiJson) => Promise<void> | void): Promise<void> {
+  const data = await readAiJson()
+  await fn(data)
+  await writeAiJson(data)
+}
+
 export function addPackage(data: AiJson, key: string, entry: PackageEntry): void {
   data.packages[key] = entry
 }
