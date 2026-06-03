@@ -1,7 +1,6 @@
 import { readdir, symlink, mkdir, lstat, readlink, unlink } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { PROVIDER_REGISTRY, SKILLS_RULE, type SymlinkRule } from './provider-registry.js'
+import { rulesFor, listArtifacts } from './provider-registry.js'
 import { readAiJson, writeAiJson } from './ai-json.js'
 
 export type SkipReason = 'already-linked' | 'conflict-real-file' | 'conflict-wrong-symlink' | 'excluded'
@@ -42,34 +41,10 @@ export async function unlinkFiles(targetPaths: string[]): Promise<void> {
 }
 
 export async function scanLinkable(providers: string[], exclude: string[]): Promise<LinkableEntry[]> {
-  const rules: SymlinkRule[] = [
-    ...providers.flatMap(p => PROVIDER_REGISTRY[p].rules),
-    SKILLS_RULE,
-  ]
-
-  const entries: LinkableEntry[] = []
-
-  for (const rule of rules) {
-    let dirEntries: string[]
-    try {
-      dirEntries = await readdir(rule.source)
-    } catch {
-      continue
-    }
-
-    for (const entry of dirEntries) {
-      const sourcePath = path.join(rule.source, entry)
-      const aiRelativePath = sourcePath.startsWith('.ai/')
-        ? sourcePath.slice('.ai/'.length)
-        : sourcePath
-
-      if (isExcluded(aiRelativePath, exclude)) continue
-
-      entries.push({ sourcePath, label: aiRelativePath })
-    }
-  }
-
-  return entries
+  const artifacts = await listArtifacts('.ai', providers)
+  return artifacts
+    .filter(a => !isExcluded(a, exclude))
+    .map(a => ({ sourcePath: `.ai/${a}`, label: a }))
 }
 
 export async function linkProviders(
@@ -85,10 +60,7 @@ export async function linkProviders(
 
   const exclude = (!ownershipValue && aiJson.packages['.']?.exclude) ? aiJson.packages['.'].exclude : []
 
-  const rules: SymlinkRule[] = [
-    ...providers.flatMap(p => PROVIDER_REGISTRY[p].rules),
-    SKILLS_RULE,
-  ]
+  const rules = rulesFor(providers)
 
   const linked: string[] = []
   const skipped: SkippedEntry[] = []

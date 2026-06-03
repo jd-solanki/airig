@@ -2,27 +2,10 @@ import { Command } from 'commander'
 import { checkbox } from '@inquirer/prompts'
 import { rm } from 'node:fs/promises'
 import path from 'node:path'
-import { PROVIDER_REGISTRY, SKILLS_RULE, type SymlinkRule } from '../lib/provider-registry.js'
+import { artifactForTarget } from '../lib/provider-registry.js'
 import { readAiJson, writeAiJson, removePackage, removeOwnership } from '../lib/ai-json.js'
 import { unlinkFiles } from '../lib/linker.js'
 
-function allRules(): SymlinkRule[] {
-  return [
-    ...Object.values(PROVIDER_REGISTRY).flatMap(p => p.rules),
-    SKILLS_RULE,
-  ]
-}
-
-// Reverse-map a symlink target path to the .ai/-relative artifact path
-function targetToArtifact(targetPath: string): string | undefined {
-  for (const rule of allRules()) {
-    if (targetPath === rule.target || targetPath.startsWith(rule.target + '/')) {
-      const rel = path.relative(rule.target, targetPath)
-      return rule.source.slice('.ai/'.length) + '/' + rel
-    }
-  }
-  return undefined
-}
 
 export async function runRemove(pkg: string): Promise<void> {
   const aiJson = await readAiJson()
@@ -54,7 +37,7 @@ export async function runRemove(pkg: string): Promise<void> {
     message: `Deselect artifacts to remove from ${pkg}:`,
     choices: ownedTargets.map(targetPath => ({
       value: targetPath,
-      name: targetToArtifact(targetPath) ?? targetPath,
+      name: artifactForTarget(targetPath) ?? targetPath,
       checked: true,
     })),
   })
@@ -73,7 +56,7 @@ export async function runRemove(pkg: string): Promise<void> {
   const filesDeleted: string[] = []
   if (!isLocal) {
     for (const targetPath of toRemove) {
-      const artifact = targetToArtifact(targetPath)
+      const artifact = artifactForTarget(targetPath)
       if (!artifact) continue
       const aiPath = `.ai/${artifact}`
       try {
@@ -92,7 +75,7 @@ export async function runRemove(pkg: string): Promise<void> {
   } else {
     for (const targetPath of toRemove) {
       removeOwnership(aiJson, targetPath)
-      const artifact = targetToArtifact(targetPath)
+      const artifact = artifactForTarget(targetPath)
       if (artifact) {
         aiJson.packages[pkg].exclude ??= []
         aiJson.packages[pkg].exclude!.push(artifact)

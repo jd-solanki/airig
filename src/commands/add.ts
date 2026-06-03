@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { Octokit } from '@octokit/rest'
 import extractZip from 'extract-zip'
-import { PROVIDER_REGISTRY, SKILLS_RULE } from '../lib/provider-registry.js'
+import { PROVIDER_REGISTRY, rulesFor, listArtifacts } from '../lib/provider-registry.js'
 import { linkProviders } from '../lib/linker.js'
 import { readAiJson, writeAiJson, addPackage, type PackageEntry } from '../lib/ai-json.js'
 import { fetchReleaseInfo, downloadAsset } from '../lib/github.js'
@@ -82,43 +82,13 @@ async function flattenSkills(skillsDir: string): Promise<void> {
   }
 }
 
-// Collect all artifact paths relative to .ai/ that the package provides
-async function collectArtifacts(extractedAiDir: string): Promise<string[]> {
-  const artifacts: string[] = []
-
-  const skillsDir = path.join(extractedAiDir, 'skills')
-  try {
-    const entries = await readdir(skillsDir)
-    for (const e of entries) artifacts.push(`skills/${e}`)
-  } catch { /* no skills */ }
-
-  for (const provider of Object.values(PROVIDER_REGISTRY)) {
-    for (const rule of provider.rules) {
-      const relSource = rule.source.startsWith('.ai/') ? rule.source.slice('.ai/'.length) : rule.source
-      const dirPath = path.join(extractedAiDir, relSource)
-      try {
-        const files = await readdir(dirPath)
-        for (const f of files) artifacts.push(`${relSource}/${f}`)
-      } catch { /* dir absent */ }
-    }
-  }
-
-  return artifacts
-}
-
 // Target symlink paths that would be created for an artifact given selected providers
 function computeTargetPaths(artifact: string, selectedProviders: string[]): string[] {
-  if (artifact.startsWith('skills/')) {
-    return [path.join(SKILLS_RULE.target, artifact.slice('skills/'.length))]
-  }
-
   const targets: string[] = []
-  for (const key of selectedProviders) {
-    for (const rule of PROVIDER_REGISTRY[key].rules) {
-      const relSource = rule.source.startsWith('.ai/') ? rule.source.slice('.ai/'.length) : rule.source
-      if (artifact.startsWith(relSource + '/')) {
-        targets.push(path.join(rule.target, artifact.slice(relSource.length + 1)))
-      }
+  for (const rule of rulesFor(selectedProviders)) {
+    const relSource = rule.source.startsWith('.ai/') ? rule.source.slice('.ai/'.length) : rule.source
+    if (artifact.startsWith(relSource + '/')) {
+      targets.push(path.join(rule.target, artifact.slice(relSource.length + 1)))
     }
   }
   return targets
@@ -175,7 +145,7 @@ async function runAdd(pkg: string): Promise<void> {
       await flattenSkills(skillsSrc)
     }
 
-    const allArtifacts = await collectArtifacts(extractedAiDir)
+    const allArtifacts = await listArtifacts(extractedAiDir)
     if (allArtifacts.length === 0) {
       console.log('Nothing to install — the package contains no installable artifacts.')
       return

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PROVIDER_REGISTRY, SKILLS_RULE } from '../src/lib/provider-registry.js'
+import { PROVIDER_REGISTRY, rulesFor } from '../src/lib/provider-registry.js'
 
 describe('PROVIDER_REGISTRY', () => {
   it('has claude and codex providers', () => {
@@ -21,9 +21,24 @@ describe('PROVIDER_REGISTRY', () => {
   })
 })
 
-describe('SKILLS_RULE', () => {
-  it('maps .ai/skills to .agents/skills', () => {
-    expect(SKILLS_RULE.source).toBe('.ai/skills')
-    expect(SKILLS_RULE.target).toBe('.agents/skills')
+describe('rulesFor', () => {
+  it('always includes the skills rule regardless of providers', () => {
+    const rules = rulesFor([])
+    expect(rules).toHaveLength(1)
+    expect(rules[0].source).toBe('.ai/skills')
+    expect(rules[0].target).toBe('.agents/skills')
+  })
+
+  it('includes provider rules followed by the skills rule', () => {
+    const rules = rulesFor(['claude'])
+    expect(rules).toHaveLength(3) // 2 claude rules + skills
+    expect(rules[0].source).toBe('.ai/.claude/agents')
+    expect(rules[rules.length - 1].source).toBe('.ai/skills')
+  })
+
+  it('includes all provider rules when all providers are given', () => {
+    const rules = rulesFor(Object.keys(PROVIDER_REGISTRY))
+    // claude(2) + codex(2) + skills(1)
+    expect(rules).toHaveLength(5)
   })
 })
