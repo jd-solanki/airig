@@ -47,77 +47,92 @@ export async function scanLinkable(providers: string[], exclude: string[]): Prom
     .map(a => ({ sourcePath: `.ai/${a}`, label: a }))
 }
 
-export async function linkProviders(
-  aiJson: AiJson,
+async function iterateRuleEntries(
   providers: string[],
-  ownershipValue?: string,
-  allowedSources?: Set<string>,
-): Promise<LinkResult> {
-
-  const exclude = (!ownershipValue && aiJson.packages['.']?.exclude) ? aiJson.packages['.'].exclude : []
-
-  const rules = rulesFor(providers)
-
-  const linked: string[] = []
-  const skipped: SkippedEntry[] = []
-
-  for (const rule of rules) {
+  callback: (sourcePath: string, targetPath: string) => Promise<void>,
+): Promise<void> {
+  for (const rule of rulesFor(providers)) {
     let entries: string[]
     try {
       entries = await readdir(rule.source)
     } catch {
       continue
     }
-
     await mkdir(rule.target, { recursive: true })
-
     for (const entry of entries) {
-      const sourcePath = path.join(rule.source, entry)
-      const targetPath = path.join(rule.target, entry)
-
-      const aiRelativePath = sourcePath.startsWith('.ai/')
-        ? sourcePath.slice('.ai/'.length)
-        : sourcePath
-
-      if (!ownershipValue && isExcluded(aiRelativePath, exclude!)) {
-        skipped.push({ path: targetPath, reason: 'excluded' })
-        continue
-      }
-
-      if (allowedSources && !allowedSources.has(sourcePath)) {
-        continue
-      }
-
-      let targetStat: Awaited<ReturnType<typeof lstat>> | undefined
-      try {
-        targetStat = await lstat(targetPath)
-      } catch {
-        // target doesn't exist — proceed to create
-      }
-
-      if (targetStat) {
-        if (targetStat.isSymbolicLink()) {
-          const existing = await readlink(targetPath)
-          const resolvedExisting = path.resolve(path.dirname(targetPath), existing)
-          const resolvedSource = path.resolve(sourcePath)
-          if (resolvedExisting === resolvedSource) {
-            skipped.push({ path: targetPath, reason: 'already-linked' })
-            continue
-          }
-          skipped.push({ path: targetPath, reason: 'conflict-wrong-symlink' })
-        } else {
-          skipped.push({ path: targetPath, reason: 'conflict-real-file' })
-        }
-        continue
-      }
-
-      const relSource = path.relative(path.dirname(targetPath), sourcePath)
-      await symlink(relSource, targetPath)
-
-      aiJson.ownership[targetPath] = ownershipValue ?? sourcePath
-      linked.push(targetPath)
+      await callback(path.join(rule.source, entry), path.join(rule.target, entry))
     }
   }
+}
 
-  return { linked, skipped }
+async function createSymlink(
+  sourcePath: string,
+  targetPath: string,
+  ownershipValue: string,
+  aiJson: AiJson,
+  result: LinkResult,
+): Promise<void> {
+  let targetStat: Awaited<ReturnType<typeof lstat>> | undefined
+  try {
+    targetStat = await lstat(targetPath)
+  } catch {
+    // target doesn't exist — proceed to create
+  }
+
+  if (targetStat) {
+    if (targetStat.isSymbolicLink()) {
+      const existing = await readlink(targetPath)
+      const resolvedExisting = path.resolve(path.dirname(targetPath), existing)
+      const resolvedSource = path.resolve(sourcePath)
+      if (resolvedExisting === resolvedSource) {
+        result.skipped.push({ path: targetPath, reason: 'already-linked' })
+        return
+      }
+      result.skipped.push({ path: targetPath, reason: 'conflict-wrong-symlink' })
+    } else {
+      result.skipped.push({ path: targetPath, reason: 'conflict-real-file' })
+    }
+    return
+  }
+
+  const relSource = path.relative(path.dirname(targetPath), sourcePath)
+  await symlink(relSource, targetPath)
+  aiJson.ownership[targetPath] = ownershipValue
+  result.linked.push(targetPath)
+}
+
+export async function linkPackageArtifacts(
+  aiJson: AiJson,
+  providers: string[],
+  ownershipValue: string,
+): Promise<LinkResult> {
+  const result: LinkResult = { linked: [], skipped: [] }
+  await iterateRuleEntries(providers, (sourcePath, targetPath) =>
+    createSymlink(sourcePath, targetPath, ownershipValue, aiJson, result),
+  )
+  return result
+}
+
+export async function linkLocalFiles(
+  aiJson: AiJson,
+  providers: string[],
+  allowedSources?: Set<string>,
+): Promise<LinkResult> {
+  const exclude = aiJson.packages['.']?.exclude ?? []
+  const result: LinkResult = { linked: [], skipped: [] }
+  await iterateRuleEntries(providers, async (sourcePath, targetPath) => {
+    const aiRelativePath = sourcePath.startsWith('.ai/')
+      ? sourcePath.slice('.ai/'.length)
+      : sourcePath
+
+    if (isExcluded(aiRelativePath, exclude)) {
+      result.skipped.push({ path: targetPath, reason: 'excluded' })
+      return
+    }
+
+    if (allowedSources && !allowedSources.has(sourcePath)) return
+
+    await createSymlink(sourcePath, targetPath, sourcePath, aiJson, result)
+  })
+  return result
 }

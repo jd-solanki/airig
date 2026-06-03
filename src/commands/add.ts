@@ -7,7 +7,7 @@ import path from 'node:path'
 import { Octokit } from '@octokit/rest'
 import extractZip from 'extract-zip'
 import { PROVIDER_REGISTRY, rulesFor, listArtifacts } from '../lib/provider-registry.js'
-import { linkProviders } from '../lib/linker.js'
+import { linkPackageArtifacts } from '../lib/linker.js'
 import { readAiJson, writeAiJson, addPackage, type PackageEntry } from '../lib/ai-json.js'
 import { fetchReleaseInfo, downloadAsset } from '../lib/github.js'
 
@@ -198,7 +198,7 @@ async function runAdd(pkg: string): Promise<void> {
 
     await copyArtifactsToAi(extractedAiDir, selectedArtifacts)
 
-    const linkResult = await linkProviders(aiJson, selectedProviders, ownershipValue)
+    const linkResult = await linkPackageArtifacts(aiJson, selectedProviders, ownershipValue)
 
     const entry: PackageEntry = { version: resolvedTag }
     if (excludedArtifacts.length > 0) entry.exclude = excludedArtifacts
