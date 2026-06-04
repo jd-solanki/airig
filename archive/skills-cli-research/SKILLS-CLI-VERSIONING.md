@@ -1,5 +1,7 @@
 # npx skills CLI — Versioning Research
 
+> _NOTE: This document is for `skills.sh CLI` and not for `ohmyai`_
+
 Reference document for designing a competing tool. Based on analysis of the
 `vercel-labs/skills` source code (v1.5.9, released 2026-05-27), the local
 `skills-lock.json`, and open issues/security disclosures as of May 2026.
@@ -80,6 +82,7 @@ installation (or the specific `ref` fragment if provided).
 The CLI tracks two different hashes for update detection:
 
 **Global lock** (`~/.agents/.skill-lock.json`, schema v3):
+
 - `skillFolderHash` — the GitHub Trees API **tree SHA** for the skill's folder. This
   is a Git object SHA, not a content hash. It changes when any file in the folder
   changes upstream.
@@ -87,12 +90,13 @@ The CLI tracks two different hashes for update detection:
   optional `skillPath`.
 
 **Project lock** (`skills-lock.json` in cwd, schema v1):
+
 - `computedHash` — a **SHA-256** computed locally from the actual file contents on
   disk (sorted by relative path for determinism).
 - Stores `source`, `sourceType`, `skillPath`, no timestamps (intentionally, to
   minimise merge conflicts).
 
-Both locks record *what was installed and from where*, not *what version was requested*.
+Both locks record _what was installed and from where_, not _what version was requested_.
 There is no way to say "I want `diagnose` at commit `abc123` forever" — only
 "I installed `diagnose` from `mattpocock/skills`, and its folder SHA at install time
 was `xyz`."
@@ -124,6 +128,7 @@ folder SHA differs from the stored hash, the skill is reported as out of date.
 ### 4a. `npx skills check` / `npx skills update`
 
 **Global scope (`-g`):**
+
 1. Reads `~/.agents/.skill-lock.json`.
 2. Groups skills by source repo to minimise GitHub API calls.
 3. Fetches the current repo tree via GitHub Trees API.
@@ -131,6 +136,7 @@ folder SHA differs from the stored hash, the skill is reported as out of date.
 5. For each changed skill, re-runs `npx skills add <sourceUrl> -g -y` as a subprocess.
 
 **Project scope (default):**
+
 1. Reads `skills-lock.json` from cwd.
 2. For each source, does a `git clone --depth 1` to discover currently-available skills.
 3. Checks for upstream deletions (prompts user).
@@ -298,15 +304,15 @@ is currently open and unimplemented.
 
 ## References
 
-- Source repo: https://github.com/vercel-labs/skills
-- npm package: https://www.npmjs.com/package/skills (v1.5.9 as of 2026-05-27)
-- skills.sh marketplace: https://skills.sh
-- Issue #283 (install/sync): https://github.com/vercel-labs/skills/issues/283
-- Issue #337 (project update): https://github.com/vercel-labs/skills/issues/337
-- Issue #542 (project lock bug): https://github.com/vercel-labs/skills/issues/542
-- Issue #549 (npx skills install): https://github.com/vercel-labs/skills/issues/549
-- Issue #617 (signature verification RFC): https://github.com/vercel-labs/skills/issues/617
-- isRepoPrivate telemetry bug: https://cjlludwig.github.io/blog/vercel-hack-skillssh-security/
-- Snyk security analysis: https://snyk.io/blog/snyk-vercel-securing-agent-skill-ecosystem/
-- Supply chain attack vector: https://github.com/vercel-labs/agent-skills/issues/91
-- Lockfile article: https://maier.tech/notes/a-lockfile-for-agent-skills
+- Source repo: <https://github.com/vercel-labs/skills>
+- npm package: <https://www.npmjs.com/package/skills> (v1.5.9 as of 2026-05-27)
+- skills.sh marketplace: <https://skills.sh>
+- Issue #283 (install/sync): <https://github.com/vercel-labs/skills/issues/283>
+- Issue #337 (project update): <https://github.com/vercel-labs/skills/issues/337>
+- Issue #542 (project lock bug): <https://github.com/vercel-labs/skills/issues/542>
+- Issue #549 (npx skills install): <https://github.com/vercel-labs/skills/issues/549>
+- Issue #617 (signature verification RFC): <https://github.com/vercel-labs/skills/issues/617>
+- isRepoPrivate telemetry bug: <https://cjlludwig.github.io/blog/vercel-hack-skillssh-security/>
+- Snyk security analysis: <https://snyk.io/blog/snyk-vercel-securing-agent-skill-ecosystem/>
+- Supply chain attack vector: <https://github.com/vercel-labs/agent-skills/issues/91>
+- Lockfile article: <https://maier.tech/notes/a-lockfile-for-agent-skills>
