@@ -186,12 +186,12 @@ interface AiJson {
 }
 
 interface PackageEntry {
-  version: string          // exact version e.g. "1.2.0", or "*" for the local "." package
+  version: string          // exact Setup Release version e.g. "1.2.0", or "*" for the local AI Setup
   exclude?: string[]       // paths relative to .ai/, e.g. ["skills/python-pro.md"]
 }
 ```
 
-Package keys are either `"owner/repo"` (remote package) or `"."` (local package — the author's own `.ai/` directory). The `"."` key uses `version: "*"` as a sentinel meaning "always current, no pinning." The `exclude` list on `"."` allows selective linking — specific files or subdirs the author wants to skip.
+The `packages` field name is retained in `ai.json` for now, but its keys represent either `"owner/repo"` (remote Setup Release) or `"."` (local AI Setup — the author's own `.ai/` directory). The `"."` key uses `version: "*"` as a sentinel meaning "always current, no pinning." The `exclude` list on `"."` allows selective linking — specific files or subdirs the author wants to skip.
 
 Example:
 ```json
@@ -217,10 +217,10 @@ Example:
 **Rules:**
 - Ownership keys are symlink target paths (e.g. `.claude/agents/reviewer.md`).
 - Ownership values are one of two forms:
-  - `"owner/repo@version"` — written by `add` for remote package symlinks
+  - `"owner/repo@version"` — written by `add` for remote Setup Release symlinks
   - `".ai/relative/source/path"` — written by `link` for local symlinks; the explicit path lets any reader trace exactly what the symlink points to
-- `add` treats `.ai/`-prefixed entries as overwriteable — warns the user and replaces the entry with the package value.
-- Versions are always exact for remote packages — no semver ranges. `"*"` is only valid for the `"."` local package.
+- `add` treats `.ai/`-prefixed entries as overwriteable — warns the user and replaces the entry with the Setup Release value.
+- Versions are always exact for remote Setup Releases — no semver ranges. `"*"` is only valid for the `"."` local AI Setup.
 - Immutability is always verified online via the GitHub API — on every `add`. No offline attestation cache.
 
 ---
@@ -248,7 +248,7 @@ No `gh` CLI dependency anywhere in the codebase.
 
 ### `link [provider]`
 
-**Purpose:** Wires `.ai/` into provider config dirs via per-file symlinks. Fully local — no network. Writes to `ai.json` — exact behaviour depends on the caller: standalone invocations write the `"."` package entry and `.ai/`-relative source path ownership entries; when called internally by `add` with an `ownershipValue`, writes package-owned entries only and skips `packages["."]` handling entirely.
+**Purpose:** Wires `.ai/` into provider config dirs via per-file symlinks. Fully local — no network. Writes to `ai.json` — exact behaviour depends on the caller: standalone invocations write the `"."` local AI Setup entry and `.ai/`-relative source path ownership entries; when called internally by `add` with an `ownershipValue`, writes Setup Release-owned entries only and skips `packages["."]` handling entirely.
 
 **Behavior:**
 1. If `[provider]` is omitted, show a multi-select prompt listing all registered providers — user selects one or more
@@ -268,7 +268,7 @@ No `gh` CLI dependency anywhere in the codebase.
 **Key design decisions:**
 - Provider argument is optional — omitting it opens multi-select so users can wire multiple providers in one run
 - Per-file symlinks, not directory-level — preserves unmanaged files in target dirs
-- Uses `"."` as the local package key (with `version: "*"` and optional `exclude`) so the `packages` section uniformly lists all managed setups; `remove "."` identifies local entries by their `.ai/`-prefixed ownership value
+- Uses `"."` as the local AI Setup key (with `version: "*"` and optional `exclude`) so the `packages` section uniformly lists all managed setups; `remove "."` identifies local entries by their `.ai/`-prefixed ownership value
 - Idempotent — safe to run repeatedly
 - Skills (`.ai/skills/`) are always linked regardless of which providers are selected
 
@@ -276,7 +276,7 @@ No `gh` CLI dependency anywhere in the codebase.
 
 ### `publish [tag]`
 
-**Purpose:** Author's release command. Packages `.ai/` into `ai.zip`, creates an immutable GitHub release.
+**Purpose:** Author's Setup Release command. Bundles `.ai/` into `ai.zip`, creates an immutable GitHub release.
 
 **Behavior:**
 1. Require `GITHUB_TOKEN` — error if absent
@@ -308,11 +308,11 @@ No `gh` CLI dependency anywhere in the codebase.
 6. **Artifact selection** — user picks which subdirs/files to include; deselected items written to `exclude` list
 7. **Provider selection** — multi-select prompt listing all registered providers; user picks which to wire
 8. **Conflict check** — for each selected artifact × selected provider, compute target symlink path, check against `ai.json` ownership map:
-   - **Package-owned entry** (value = `"owner/repo@version"`) → error with conflict report before writing anything
+   - **Setup Release-owned entry** (value = `"owner/repo@version"`) → error with conflict report before writing anything
    - **Locally-managed entry** (value starts with `.ai/`) → warn the user ("previously locally-managed, now owned by `owner/repo@version`") and proceed; the entry will be overwritten at step 10
 9. Write files from temp dir into `.ai/`
-10. Run link for selected providers, passing `"owner/repo@version"` as the `ownershipValue` — link creates symlinks and writes package-owned entries directly to `ai.json`
-11. Update `ai.json` — add package entry (version + exclude list); ownership entries are already written by step 10
+10. Run link for selected providers, passing `"owner/repo@version"` as the `ownershipValue` — link creates symlinks and writes Setup Release-owned entries directly to `ai.json`
+11. Update `ai.json` — add Setup Release entry (version + exclude list); ownership entries are already written by step 10
 12. Print install summary: files added to `.ai/`, symlinks created (per provider), files skipped (excluded), locally-managed entries overwritten with a warning (if any), conflicts that blocked the install (if any)
 13. Clean up temp dir
 
@@ -320,24 +320,24 @@ No `gh` CLI dependency anywhere in the codebase.
 
 ### `remove <owner/repo|.>`
 
-**Purpose:** Uninstalls a package — removes its symlinks from provider config dirs, optionally deletes its files from `.ai/`, and cleans up `ai.json`. Accepts either a remote package key (`owner/repo`) or the local package key (`.`). No network calls required.
+**Purpose:** Uninstalls a Setup Release or local AI Setup — removes its symlinks from provider config dirs, optionally deletes its files from `.ai/`, and cleans up `ai.json`. Accepts either a remote Setup Release key (`owner/repo`) or the local AI Setup key (`.`). No network calls required.
 
 **Behavior:**
-1. Look up the package key in `ai.json` — error if not found
+1. Look up the manifest key in `ai.json` — error if not found
 2. Collect all owned entries from `ownership`:
-   - **Remote packages (`owner/repo`):** entries where value = `"owner/repo@version"` for this package
-   - **Local package (`"."`):** entries where value starts with `.ai/`
+   - **Remote Setup Releases (`owner/repo`):** entries where value = `"owner/repo@version"` for this Setup Release
+   - **Local AI Setup (`"."`):** entries where value starts with `.ai/`
 3. **Interactive artifact selection:** show a checkbox listing all owned artifacts as `.ai/`-relative paths (reverse-mapped from symlink target paths via the provider registry), all pre-checked
 4. If the user selects nothing → print "Nothing removed." and exit cleanly
 5. **Full removal (all artifacts selected):**
    - Delete all owned symlinks from their target paths
-   - **Remote packages only:** delete all package files from `.ai/`
-   - Remove the package entry and all its ownership entries from `ai.json`
+   - **Remote Setup Releases only:** delete all Setup Release files from `.ai/`
+   - Remove the manifest entry and all its ownership entries from `ai.json`
 6. **Partial removal (subset selected):**
    - Delete symlinks only for selected artifacts
-   - **Remote packages only:** delete `.ai/` files only for selected artifacts
+   - **Remote Setup Releases only:** delete `.ai/` files only for selected artifacts
    - Remove only the selected entries from `ownership`
-   - Append the removed artifact paths to `exclude` in the package entry — preserving the package entry itself
+   - Append the removed artifact paths to `exclude` in the manifest entry — preserving the entry itself
 7. Print removal summary: symlinks removed, files deleted (remote only), artifacts added to exclude (partial only)
 
 **Operation order:** symlinks → files (remote only) → `ai.json`. If interrupted before `ai.json` is written, the files and symlinks are already gone; re-running `remove` will find no ownership entries for the missing items and treat them as already removed.
@@ -390,15 +390,15 @@ No `gh` CLI dependency anywhere in the codebase.
 
 **Decision:** Consumer commands (`add`, `check`, `sync`) make unauthenticated GitHub API calls. Only `publish` requires `GITHUB_TOKEN`.
 
-**Why:** GitHub's API allows unauthenticated reads on public repos (60 req/hour — sufficient for package install workflows). Requiring a token for consumers adds friction with no security benefit for public packages. Authors already need a token for write access; `GITHUB_TOKEN` is the universal convention for this.
+**Why:** GitHub's API allows unauthenticated reads on public repos (60 req/hour — sufficient for Setup Release install workflows). Requiring a token for consumers adds friction with no security benefit for public Setup Releases. Authors already need a token for write access; `GITHUB_TOKEN` is the universal convention for this.
 
 ---
 
-### ADR-007: `link` writes `"."` package entry and explicit source paths to `ai.json`
+### ADR-007: `link` writes `"."` local AI Setup entry and explicit source paths to `ai.json`
 
 **Decision:** `link` writes a `packages["."]` entry (`version: "*"`, optional `exclude`) to `ai.json` and records the explicit `.ai/`-relative source path as the ownership value for each symlink (e.g. `".claude/agents/reviewer.md": ".ai/.claude/agents/reviewer.md"`). It creates `ai.json` if absent.
 
-**Why:** The `"."` package key (mirroring how pnpm workspaces treat the root) makes `packages` the uniform list of all managed setups — local and remote — so consumers can see at a glance what is installed. The `exclude` list on `"."` enables selective linking: the author can skip specific files without unlinking everything. Ownership values remain explicit source paths (not a package reference like `".@*"`) so any reader can trace exactly what each symlink points to without resolving the package. `add` distinguishes local entries from remote ones by the `.ai/` prefix and treats them as overwriteable with a warning. `remove "."` deletes symlinks for all entries whose ownership value starts with `.ai/` — no separate local-entry registry needed.
+**Why:** The `"."` local AI Setup key (mirroring how pnpm workspaces treat the root) makes `packages` the uniform list of all managed setups — local and remote — so consumers can see at a glance what is installed. The `exclude` list on `"."` enables selective linking: the author can skip specific files without unlinking everything. Ownership values remain explicit source paths (not a Setup Release reference like `".@*"`) so any reader can trace exactly what each symlink points to without resolving the Setup Release. `add` distinguishes local entries from remote ones by the `.ai/` prefix and treats them as overwriteable with a warning. `remove "."` deletes symlinks for all entries whose ownership value starts with `.ai/` — no separate local-entry registry needed.
 
 ---
 
@@ -418,7 +418,7 @@ skills/engineering/diagnose/SKILL.md  → .ai/skills/diagnose/SKILL.md
 skills/a/b/c/diagnose/SKILL.md    → .ai/skills/diagnose/SKILL.md
 ```
 
-Collision rule: if two skill dirs within the same package share the same `dirname` (e.g. `engineering/auth/` and `security/auth/`), `add` errors before writing anything — skill names must be unique within a package.
+Collision rule: if two skill dirs within the same Setup Release share the same `dirname` (e.g. `engineering/auth/` and `security/auth/`), `add` errors before writing anything — skill names must be unique within a Setup Release.
 
 **Why:** The `npx skills` CLI only walks 2 levels deep, which locks out authors who use deeper nesting (sub-subcategories, monorepos with extra wrapper dirs, etc.). SKILL.md-presence detection is depth-agnostic: it makes no assumption about how authors organise their source repo. The skill name (dirname) is the only identity that matters to consumers and agents. Flattening on `add`/`update` means `link` stays simple — it always sees a flat `.ai/skills/` and never needs to know about the author's source layout.
 
@@ -442,6 +442,6 @@ Collision rule: if two skill dirs within the same package share the same `dirnam
 
 ### ADR-011: `remove` is interactive with partial artifact selection support
 
-**Decision:** `remove owner/repo` shows a checkbox of all currently-installed artifacts pre-checked. Selecting all does a full uninstall (package entry removed). Selecting a subset removes only those artifacts, adds them to the `exclude` list in `ai.json`, and preserves the package entry. No new command (`unlink` or similar) is introduced.
+**Decision:** `remove owner/repo` shows a checkbox of all currently-installed artifacts pre-checked. Selecting all does a full uninstall (Setup Release entry removed). Selecting a subset removes only those artifacts, adds them to the `exclude` list in `ai.json`, and preserves the Setup Release entry. No new command (`unlink` or similar) is introduced.
 
-**Why:** Without partial removal, trimming an install (e.g. from 5 skills to 2) requires `remove` + `add` — a round-trip that re-downloads the release. Since `ai.json` already tracks installed artifacts via `ownership` and the `exclude` list already exists for partial installs, partial removal is fully local and costs nothing extra. A separate `unlink` command was considered but rejected: `link` means "wire `.ai/` files to provider config dirs via symlinks", so `unlink` would naturally mean "remove those symlinks" — not "remove individual package artifacts". That naming collision would confuse users. Extending `remove` with interactive selection keeps the command surface minimal and the semantics unambiguous.
+**Why:** Without partial removal, trimming an install (e.g. from 5 skills to 2) requires `remove` + `add` — a round-trip that re-downloads the release. Since `ai.json` already tracks installed artifacts via `ownership` and the `exclude` list already exists for partial installs, partial removal is fully local and costs nothing extra. A separate `unlink` command was considered but rejected: `link` means "wire `.ai/` files to provider config dirs via symlinks", so `unlink` would naturally mean "remove those symlinks" — not "remove individual Setup Release artifacts". That naming collision would confuse users. Extending `remove` with interactive selection keeps the command surface minimal and the semantics unambiguous.

@@ -13,9 +13,12 @@ The author is the first consumer of their own setup. Authors place their AI setu
 ## Glossary
 
 ### AI Setup
-The complete collection of AI configuration artifacts for one or more providers — skills, agents, custom commands, hooks. The unit of distribution in `ohmyai`. Stored in the `.ai/` directory.
+The complete collection of AI configuration artifacts for one or more providers — skills, agents, custom commands, hooks. Stored in the `.ai/` directory and distributed as a Setup Release when published.
 
 ### Package
+The public npm CLI package that provides the `ohmyai` command. Published to npm so users can run `npx ohmyai`.
+
+### Setup Release
 A versioned AI Setup published by an author on GitHub. Identified as `<owner>/<repo>` (e.g. `yourname/setup`). Distributed via GitHub immutable releases as an `ai.zip` asset.
 
 ### Provider
@@ -48,7 +51,7 @@ The directory at the repo root that holds global-scoped AI Setup content — art
 ```
 
 ### `ai.json`
-The single manifest file for an installation scope. Lives at `.ai/ai.json` (project scope) or `~/.ai/ai.json` (global scope). Declares which packages are installed at which exact versions, which artifacts are excluded, and records the symlink ownership map. Ownership keys are symlink target paths. Values are either `"owner/repo@version"` (package-managed) or a `.ai/`-relative source path (locally-managed, written by `link`).
+The single manifest file for an installation scope. Lives at `.ai/ai.json` (project scope) or `~/.ai/ai.json` (global scope). Declares which Setup Releases are installed at which exact versions, which artifacts are excluded, and records the symlink ownership map. Ownership keys are symlink target paths. Values are either `"owner/repo@version"` (Setup Release-managed) or a `.ai/`-relative source path (locally-managed, written by `link`).
 
 ```json
 {
@@ -70,21 +73,21 @@ The single manifest file for an installation scope. Lives at `.ai/ai.json` (proj
 }
 ```
 
-Package keys are either `"owner/repo"` (remote package) or `"."` (local package — the author's own `.ai/` directory, written by `link`). The `"."` key uses `version: "*"` as a sentinel meaning "always current, no pinning." Its `exclude` list enables selective linking — specific files or dirs the author wants to skip.
+Manifest keys are either `"owner/repo"` (remote Setup Release) or `"."` (local AI Setup — the author's own `.ai/` directory, written by `link`). The `"."` key uses `version: "*"` as a sentinel meaning "always current, no pinning." Its `exclude` list enables selective linking — specific files or dirs the author wants to skip.
 
-**Versions are always exact** for remote packages — no semver ranges. The CLI pins the exact version on `add` and only moves it on an explicit `update` command. `"*"` is only valid for the `"."` local package.
+**Versions are always exact** for remote Setup Releases — no semver ranges. The CLI pins the exact version on `add` and only moves it on an explicit `update` command. `"*"` is only valid for the `"."` local AI Setup.
 
 Immutability is always verified online via the GitHub API — on every `add`, `update`, and `sync`. No offline attestation cache.
 
-The `ownership` section is written and owned by the CLI — consumers never edit it manually. Values are either `"owner/repo@version"` (remote) or an explicit `.ai/`-relative source path (local, written by `link`). It records which package owns each symlinked file for conflict detection.
+The `ownership` section is written and owned by the CLI — consumers never edit it manually. Values are either `"owner/repo@version"` (remote Setup Release) or an explicit `.ai/`-relative source path (local AI Setup, written by `link`). It records which Setup Release or local AI Setup owns each symlinked file for conflict detection.
 
-The `exclude` list is written by the CLI after interactive selection during `add` (remote packages) or respected during `link` (local `"."` package). Directory paths exclude everything under them.
+The `exclude` list is written by the CLI after interactive selection during `add` (remote Setup Releases) or respected during `link` (local AI Setup). Directory paths exclude everything under them.
 
 ### Interactive Selection
 The CLI prompt shown during `npx ohmyai add` that lets consumers pick which artifact subdirectories and individual files to install. Deselected items are written to the `exclude` list in `ai.json`. Consumers never edit the exclude list manually — the CLI owns it.
 
 ### Command Interaction Model
-`add` is interactive — triggers the Interactive Selection prompt so consumers choose which artifacts to install. `remove` is interactive — shows a checkbox of all currently-installed artifacts pre-checked; selecting a subset removes only those and adds them to the `exclude` list (local-only, no re-download needed); selecting all does a full uninstall and removes the package entry entirely. `update` is explicit — requires a version argument, never auto-resolves, never prompts. `check` is unattended-safe — read-only, prints available newer immutable releases, safe in CI.
+`add` is interactive — triggers the Interactive Selection prompt so consumers choose which artifacts to install. `remove` is interactive — shows a checkbox of all currently-installed artifacts pre-checked; selecting a subset removes only those and adds them to the `exclude` list (local-only, no re-download needed); selecting all does a full uninstall and removes the Setup Release entry entirely. `update` is explicit — requires a version argument, never auto-resolves, never prompts. `check` is unattended-safe — read-only, prints available newer immutable releases, safe in CI.
 
 ### Update Warnings
 Informational messages printed during `npx ohmyai check` for excluded artifacts that have changed upstream:
@@ -125,14 +128,14 @@ Running `npx ohmyai update yourname/setup@<version>`:
 - Replaces files that exist in the new release
 - Adds files new to the release
 - Deletes files removed from the release
-- Preserves files in `.ai/` that are not part of the package (consumer-added files)
+- Preserves files in `.ai/` that are not part of the Setup Release (consumer-added files)
 - Prints a full install summary before writing anything
 - Consumer uses `git diff` to review and recover any customizations
 
 Running `npx ohmyai check [owner/repo]`:
 - Read-only, never writes files
-- Fetches available newer immutable releases for installed packages
-- Reports which packages have updates available
+- Fetches available newer immutable releases for installed Setup Releases
+- Reports which Setup Releases have updates available
 - Safe to run in CI
 
 ---

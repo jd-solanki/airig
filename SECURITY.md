@@ -12,7 +12,7 @@ AI setup files (skills, agents, commands) are Markdown instructions that AI codi
 Skill files are loaded into the agent's context window alongside legitimate instructions. A malicious file can override agent behaviour, steer it toward attacker-controlled services, or suppress normal safety responses. The attack is invisible to the user — the agent simply follows the injected instructions.
 
 **Supply chain via silent auto-update**
-If an AI setup tool auto-updates to the latest version of a package, a compromised or hijacked author account can push a malicious update that propagates silently to every consumer on next run. No user action required. The attack lands before anyone notices.
+If an AI setup tool auto-updates to the latest version of a Setup Release, a compromised or hijacked author account can push a malicious update that propagates silently to every consumer on next run. No user action required. The attack lands before anyone notices.
 
 **Data exfiltration via declared tool permissions**
 Skills can declare broad `allowed-tools` permissions (e.g. `Bash(*)`). A malicious skill uses these to read `~/.aws/credentials`, `~/.ssh/id_rsa`, `.env` files, then exfiltrates them via a `curl` subprocess or `WebFetch` call — all within the skill's "setup" step, before the ostensible skill behaviour runs.
@@ -24,7 +24,7 @@ A skill run once can instruct the agent to write other files to disk: additional
 Skills that assist with coding can inject subtle logic bugs, hardcoded credentials in generated code, or calls to attacker-controlled URLs — defects that persist in the codebase long after the skill is uninstalled.
 
 **Repository impersonation**
-If a popular package's repository is deleted, an attacker can recreate it at the same `owner/repo` path and publish malicious releases under the same name.
+If a popular Setup Release's repository is deleted, an attacker can recreate it at the same `owner/repo` path and publish malicious releases under the same name.
 
 ---
 
@@ -59,7 +59,7 @@ Immutability is always verified online via the GitHub API — on every `add`, `u
 
 ### 3. Exact Version Pinning — No Auto-Updates
 
-Every installed package is pinned to an exact version in `ai.json`:
+Every installed Setup Release is pinned to an exact version in `ai.json`:
 
 ```json
 {
@@ -81,7 +81,7 @@ A malicious new release cannot reach any consumer unless they deliberately run `
 
 ### 4. Conflict Detection via Symlink Ownership
 
-The `ownership` section of `ai.json` records which package owns each installed file:
+The `ownership` section of `ai.json` records which Setup Release or local AI Setup owns each installed file:
 
 ```json
 {
@@ -92,7 +92,7 @@ The `ownership` section of `ai.json` records which package owns each installed f
 }
 ```
 
-At install time, if a new package attempts to install a file already owned by another package, the CLI errors and reports the conflict. No silent last-write-wins overwrite. The consumer must explicitly exclude the conflicting artifact from one of the packages before the install proceeds.
+At install time, if a new Setup Release attempts to install a file already owned by another Setup Release or local AI Setup, the CLI errors and reports the conflict. No silent last-write-wins overwrite. The consumer must explicitly exclude the conflicting artifact from one of the Setup Releases before the install proceeds.
 
 ### 5. Always-Online Integrity Verification
 
@@ -101,12 +101,12 @@ At install time, if a new package attempts to install a file already owned by an
 ```
 ✖ Immutability check failed: yourname/setup@1.2.0
   Release is no longer immutable or has been deleted.
-  Do not use this installation. Report to the package author.
+  Do not use this installation. Report to the Setup Release author.
 ```
 
 ### 6. `link` is Fully Local
 
-The `link` command ownership `.ai/<provider>/` into provider config directories using only files already on disk. It makes no network calls, fetches no releases, and performs no version or attestation checks. It is the author's command for wiring up their own setup while building it — the two concerns (local authoring and remote distribution) are completely separated.
+The `link` command wires `.ai/<provider>/` into provider config directories using only files already on disk. It makes no network calls, fetches no releases, and performs no version or attestation checks. It is the author's command for wiring up their own setup while building it — the two concerns (local authoring and remote distribution) are completely separated.
 
 ---
 
@@ -132,7 +132,7 @@ ohmyai does not currently validate or restrict `allowed-tools` declarations in s
 | **Version model** | Always latest HEAD — silent updates on every `npx skills update` | Exact pinning — version never moves without explicit consumer command |
 | **Auto-update attack surface** | Full — any `update` run pulls whatever is at HEAD | None — `update` requires explicit version; `check` is read-only |
 | **Repository impersonation** | Vulnerable — repo deleted + recreated at same path is indistinguishable | Protected — GitHub immutable release tags cannot be reused after repo recreation |
-| **Conflict detection** | None — last-write-wins across packages | `ownership` ownership map in `ai.json`, error on collision |
+| **Conflict detection** | None — last-write-wins across install sources | `ownership` ownership map in `ai.json`, error on collision |
 | **Restore from manifest** | Not supported — `npx skills install` does not exist | `npx ohmyai sync` re-fetches and verifies all pinned immutable releases |
 | **Lockfile integrity** | `skills-lock.json` stores SHA-256 of disk contents — detects local drift only | Always-online GitHub API verification on every `add`, `update`, `sync` — no cached attestation |
 | **`remove` updates manifest** | No — lockfile diverges silently after `remove` | Yes — `remove` is atomic: files deleted and `ai.json` updated together |
