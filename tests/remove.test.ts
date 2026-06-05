@@ -60,46 +60,18 @@ describe('remote package (owner/repo)', () => {
     })
   }
 
-  it('does nothing when user keeps all artifacts', async () => {
+  it('fully removes all symlinks, .ai/ files, and package entry without prompting', async () => {
     await setupRemote()
-    vi.mocked(checkbox).mockResolvedValue(['.agents/skills/tdd', '.agents/skills/coding'])
 
     await runRemove('owner/repo')
 
-    expect(existsSync('.agents/skills/tdd')).toBe(true)
-    expect(existsSync('.agents/skills/coding')).toBe(true)
-    const aiJson = await readAiJson()
-    expect(aiJson.packages['owner/repo']).toBeDefined()
-  })
-
-  it('fully removes all symlinks, .ai/ files, and package entry', async () => {
-    await setupRemote()
-    vi.mocked(checkbox).mockResolvedValue([])
-
-    await runRemove('owner/repo')
-
+    expect(checkbox).not.toHaveBeenCalled()
     expect(existsSync('.agents/skills/tdd')).toBe(false)
     expect(existsSync('.agents/skills/coding')).toBe(false)
     expect(existsSync('.ai/skills/tdd')).toBe(false)
     expect(existsSync('.ai/skills/coding')).toBe(false)
     const aiJson = await readAiJson()
     expect(aiJson.packages['owner/repo']).toBeUndefined()
-    expect(aiJson).not.toHaveProperty('ownership')
-  })
-
-  it('partially removes selected artifacts and keeps linked as a positive list', async () => {
-    await setupRemote()
-    vi.mocked(checkbox).mockResolvedValue(['.agents/skills/tdd'])
-
-    await runRemove('owner/repo')
-
-    expect(existsSync('.agents/skills/tdd')).toBe(true)
-    expect(existsSync('.agents/skills/coding')).toBe(false)
-    expect(existsSync('.ai/skills/tdd')).toBe(true)
-    expect(existsSync('.ai/skills/coding')).toBe(false)
-
-    const aiJson = await readAiJson()
-    expect(aiJson.packages['owner/repo']).toEqual({ version: '1.0.0', linked: ['skills/tdd'] })
     expect(aiJson).not.toHaveProperty('ownership')
   })
 
@@ -120,10 +92,10 @@ describe('remote package (owner/repo)', () => {
         'owner/repo': { version: '1.0.0', linked: ['.codex/commands/foo.md'] },
       },
     })
-    vi.mocked(checkbox).mockResolvedValue([])
 
     await runRemove('owner/repo')
 
+    expect(checkbox).not.toHaveBeenCalled()
     expect(existsSync('.codex/prompts/foo.md')).toBe(false)
     expect(existsSync('.ai/.codex/commands/foo.md')).toBe(false)
   })
@@ -143,12 +115,12 @@ describe('local package (.)', () => {
     })
   }
 
-  it('removes symlinks but leaves .ai/ source files intact on full removal', async () => {
+  it('removes symlinks but leaves .ai/ source files intact without prompting', async () => {
     await setupLocal()
-    vi.mocked(checkbox).mockResolvedValue([])
 
     await runRemove('.')
 
+    expect(checkbox).not.toHaveBeenCalled()
     expect(existsSync('.agents/skills/coding')).toBe(false)
     expect(existsSync('.claude/agents/reviewer.md')).toBe(false)
     expect(existsSync('.ai/skills/coding/SKILL.md')).toBe(true)
@@ -156,20 +128,5 @@ describe('local package (.)', () => {
 
     const aiJson = await readAiJson()
     expect(aiJson.packages['.']).toBeUndefined()
-  })
-
-  it('partially removes symlinks and keeps remaining local artifacts linked', async () => {
-    await setupLocal()
-    vi.mocked(checkbox).mockResolvedValue(['.claude/agents/reviewer.md'])
-
-    await runRemove('.')
-
-    expect(existsSync('.agents/skills/coding')).toBe(false)
-    expect(existsSync('.claude/agents/reviewer.md')).toBe(true)
-    expect(existsSync('.ai/skills/coding/SKILL.md')).toBe(true)
-
-    const aiJson = await readAiJson()
-    expect(aiJson.packages['.']).toEqual({ version: '*', linked: ['.claude/agents/reviewer.md'] })
-    expect(aiJson).not.toHaveProperty('ownership')
   })
 })
