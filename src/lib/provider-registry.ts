@@ -37,10 +37,32 @@ export function rulesFor(providers: string[]): SymlinkRule[] {
   return [...providers.flatMap(p => PROVIDER_REGISTRY[p].rules), SKILLS_RULE]
 }
 
+export function targetPathsForArtifact(
+  artifact: string,
+  providers = Object.keys(PROVIDER_REGISTRY),
+): string[] {
+  const targets = new Set<string>()
+
+  for (const rule of rulesFor(providers)) {
+    const relSource = rule.source.startsWith('.ai/') ? rule.source.slice('.ai/'.length) : rule.source
+    if (artifact === relSource) {
+      targets.add(rule.target)
+    } else if (artifact.startsWith(relSource + '/')) {
+      targets.add(join(rule.target, artifact.slice(relSource.length + 1)))
+    }
+  }
+
+  return [...targets]
+}
+
 export function artifactForTarget(targetPath: string): string | undefined {
   for (const rule of rulesFor(Object.keys(PROVIDER_REGISTRY))) {
-    if (targetPath === rule.target || targetPath.startsWith(rule.target + '/')) {
-      return rule.source.slice('.ai/'.length) + '/' + relative(rule.target, targetPath)
+    const relSource = rule.source.startsWith('.ai/') ? rule.source.slice('.ai/'.length) : rule.source
+    if (targetPath === rule.target) {
+      return relSource
+    }
+    if (targetPath.startsWith(rule.target + '/')) {
+      return relSource + '/' + relative(rule.target, targetPath)
     }
   }
   return undefined

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import {
@@ -7,8 +7,9 @@ import {
   writeAiJson,
   addPackage,
   removePackage,
-  addOwnership,
-  removeOwnership,
+  setLinked,
+  addLinked,
+  removeLinked,
   type AiJson,
 } from '../src/lib/ai-json.js'
 
@@ -27,20 +28,48 @@ afterEach(async () => {
 })
 
 describe('readAiJson', () => {
-  it('returns empty defaults when file does not exist', async () => {
+  it('returns empty package defaults when file does not exist', async () => {
     const data = await readAiJson()
-    expect(data).toEqual({ packages: {}, ownership: {} })
+    expect(data).toEqual({ packages: {} })
   })
 
-  it('reads and parses a valid file', async () => {
+  it('reads positive linked lists for remote and local packages', async () => {
     const content: AiJson = {
-      packages: { '.': { version: '*' } },
-      ownership: { '.claude/agents/foo.md': '.ai/.claude/agents/foo.md' },
+      packages: {
+        '.': { version: '*', linked: ['skills/local'] },
+        'owner/repo': { version: '1.0.0', linked: ['skills/tdd', '.claude/agents/reviewer.md'] },
+      },
     }
     await writeAiJson(content)
 
     const data = await readAiJson()
     expect(data).toEqual(content)
+  })
+
+  it('defaults missing linked lists to empty arrays', async () => {
+    await mkdir('.ai', { recursive: true })
+    await writeFile('.ai/ai.json', JSON.stringify({
+      packages: { 'owner/repo': { version: '1.0.0' } },
+    }))
+
+    const data = await readAiJson()
+    expect(data.packages['owner/repo']).toEqual({ version: '1.0.0', linked: [] })
+  })
+
+  it('does not require or preserve a stored ownership map', async () => {
+    await mkdir('.ai', { recursive: true })
+    await writeFile('.ai/ai.json', JSON.stringify({
+      packages: { 'owner/repo': { version: '1.0.0', linked: ['skills/tdd'] } },
+      ownership: { '.agents/skills/tdd': 'owner/repo@1.0.0' },
+    }))
+
+    const data = await readAiJson()
+    await writeAiJson(data)
+
+    const raw = JSON.parse(await readFile('.ai/ai.json', 'utf-8'))
+    expect(raw).toEqual({
+      packages: { 'owner/repo': { version: '1.0.0', linked: ['skills/tdd'] } },
+    })
   })
 
   it('throws when file is malformed', async () => {
@@ -49,76 +78,87 @@ describe('readAiJson', () => {
 
     await expect(readAiJson()).rejects.toThrow('malformed')
   })
+
+  it('validates linked as a string array', async () => {
+    await mkdir('.ai', { recursive: true })
+    await writeFile('.ai/ai.json', JSON.stringify({
+      packages: { 'owner/repo': { version: '1.0.0', linked: [42] } },
+    }))
+
+    await expect(readAiJson()).rejects.toThrow('linked must be a string array')
+  })
+
+  it('validates the local package sentinel version', async () => {
+    await mkdir('.ai', { recursive: true })
+    await writeFile('.ai/ai.json', JSON.stringify({
+      packages: { '.': { version: '1.0.0', linked: [] } },
+    }))
+
+    await expect(readAiJson()).rejects.toThrow('local package "." must use version "*"')
+  })
+
+  it('rejects wildcard versions for remote packages', async () => {
+    await mkdir('.ai', { recursive: true })
+    await writeFile('.ai/ai.json', JSON.stringify({
+      packages: { 'owner/repo': { version: '*', linked: [] } },
+    }))
+
+    await expect(readAiJson()).rejects.toThrow('must use an exact version')
+  })
 })
 
 describe('writeAiJson', () => {
   it('creates the .ai directory and file when they do not exist', async () => {
-    await writeAiJson({ packages: {}, ownership: {} })
+    await writeAiJson({ packages: {} })
 
     const data = await readAiJson()
-    expect(data).toEqual({ packages: {}, ownership: {} })
+    expect(data).toEqual({ packages: {} })
   })
 
   it('writes pretty-printed JSON with a trailing newline', async () => {
-    await writeAiJson({ packages: {}, ownership: {} })
-    const raw = await (await import('node:fs/promises')).readFile('.ai/ai.json', 'utf-8')
+    await writeAiJson({ packages: {} })
+    const raw = await readFile('.ai/ai.json', 'utf-8')
     expect(raw.endsWith('\n')).toBe(true)
     expect(() => JSON.parse(raw)).not.toThrow()
   })
 })
 
-describe('addPackage / removePackage', () => {
-  it('addPackage inserts a package entry', () => {
-    const data: AiJson = { packages: {}, ownership: {} }
-    addPackage(data, 'owner/repo', { version: '1.0.0' })
-    expect(data.packages['owner/repo']).toEqual({ version: '1.0.0' })
-  })
-
-  it('addPackage stores the exclude list', () => {
-    const data: AiJson = { packages: {}, ownership: {} }
-    addPackage(data, 'owner/repo', { version: '1.0.0', exclude: ['skills/python-pro'] })
-    expect(data.packages['owner/repo'].exclude).toEqual(['skills/python-pro'])
-  })
-
-  it('addPackage overwrites an existing entry', () => {
-    const data: AiJson = { packages: { 'owner/repo': { version: '0.9.0' } }, ownership: {} }
-    addPackage(data, 'owner/repo', { version: '1.0.0' })
-    expect(data.packages['owner/repo'].version).toBe('1.0.0')
+describe('package helpers', () => {
+  it('addPackage inserts a package entry with linked artifacts', () => {
+    const data: AiJson = { packages: {} }
+    addPackage(data, 'owner/repo', { version: '1.0.0', linked: ['skills/python-pro'] })
+    expect(data.packages['owner/repo']).toEqual({ version: '1.0.0', linked: ['skills/python-pro'] })
   })
 
   it('removePackage deletes a package entry', () => {
-    const data: AiJson = { packages: { 'owner/repo': { version: '1.0.0' } }, ownership: {} }
+    const data: AiJson = { packages: { 'owner/repo': { version: '1.0.0', linked: [] } } }
     removePackage(data, 'owner/repo')
     expect(data.packages['owner/repo']).toBeUndefined()
   })
 
   it('removePackage on a non-existent key is a no-op', () => {
-    const data: AiJson = { packages: {}, ownership: {} }
+    const data: AiJson = { packages: {} }
     expect(() => removePackage(data, 'unknown/pkg')).not.toThrow()
   })
 })
 
-describe('addOwnership / removeOwnership', () => {
-  it('addOwnership inserts an ownership entry', () => {
-    const data: AiJson = { packages: {}, ownership: {} }
-    addOwnership(data, '.claude/agents/foo.md', 'owner/repo@1.0.0')
-    expect(data.ownership['.claude/agents/foo.md']).toBe('owner/repo@1.0.0')
+describe('linked helpers', () => {
+  it('setLinked replaces and deduplicates linked artifacts', () => {
+    const data: AiJson = { packages: { 'owner/repo': { version: '1.0.0', linked: ['skills/old'] } } }
+    setLinked(data, 'owner/repo', ['skills/tdd', 'skills/tdd'])
+    expect(data.packages['owner/repo'].linked).toEqual(['skills/tdd'])
   })
 
-  it('addOwnership overwrites an existing entry', () => {
-    const data: AiJson = { packages: {}, ownership: { '.claude/agents/foo.md': 'old/pkg@0.1.0' } }
-    addOwnership(data, '.claude/agents/foo.md', 'new/pkg@1.0.0')
-    expect(data.ownership['.claude/agents/foo.md']).toBe('new/pkg@1.0.0')
+  it('addLinked appends a missing artifact once', () => {
+    const data: AiJson = { packages: { 'owner/repo': { version: '1.0.0', linked: [] } } }
+    addLinked(data, 'owner/repo', 'skills/tdd')
+    addLinked(data, 'owner/repo', 'skills/tdd')
+    expect(data.packages['owner/repo'].linked).toEqual(['skills/tdd'])
   })
 
-  it('removeOwnership deletes an ownership entry', () => {
-    const data: AiJson = { packages: {}, ownership: { '.claude/agents/foo.md': 'owner/repo@1.0.0' } }
-    removeOwnership(data, '.claude/agents/foo.md')
-    expect(data.ownership['.claude/agents/foo.md']).toBeUndefined()
-  })
-
-  it('removeOwnership on a non-existent key is a no-op', () => {
-    const data: AiJson = { packages: {}, ownership: {} }
-    expect(() => removeOwnership(data, 'unknown')).not.toThrow()
+  it('removeLinked deletes a linked artifact', () => {
+    const data: AiJson = { packages: { 'owner/repo': { version: '1.0.0', linked: ['skills/tdd'] } } }
+    removeLinked(data, 'owner/repo', 'skills/tdd')
+    expect(data.packages['owner/repo'].linked).toEqual([])
   })
 })

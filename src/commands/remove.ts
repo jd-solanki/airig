@@ -1,10 +1,9 @@
 import { Command } from 'commander'
 import { checkbox } from '@inquirer/prompts'
 import { rm } from 'node:fs/promises'
-import path from 'node:path'
 import { artifactForTarget } from '../lib/provider-registry.js'
-import { readAiJson, writeAiJson, removePackage, removeOwnership } from '../lib/ai-json.js'
-import { unlinkFiles } from '../lib/linker.js'
+import { readAiJson, writeAiJson, removePackage, setLinked } from '../lib/ai-json.js'
+import { deriveTargetOwnership, unlinkFiles, type OwnedTarget } from '../lib/linker.js'
 
 
 export async function runRemove(pkg: string): Promise<void> {
@@ -18,12 +17,11 @@ export async function runRemove(pkg: string): Promise<void> {
   }
 
   const isLocal = pkg === '.'
-  const version = aiJson.packages[pkg].version
-  const ownershipValue = isLocal ? null : `${pkg}@${version}`
-
-  const ownedTargets = Object.entries(aiJson.ownership)
-    .filter(([, v]) => isLocal ? v.startsWith('.ai/') : v === ownershipValue)
-    .map(([targetPath]) => targetPath)
+  const ownership = deriveTargetOwnership(aiJson)
+  const ownedEntries = [...ownership.values()]
+    .flat()
+    .filter(owner => owner.packageKey === pkg)
+  const ownedTargets = [...new Set(ownedEntries.map(owner => owner.targetPath))]
 
   if (ownedTargets.length === 0) {
     console.log('No owned artifacts found. Cleaning up package entry.')
@@ -32,7 +30,7 @@ export async function runRemove(pkg: string): Promise<void> {
     return
   }
 
-  // All pre-checked = currently installed. User unchecks what they want removed.
+  // Removal is expressed as deselecting active artifacts, so currently linked targets start checked.
   const kept = await checkbox({
     message: `Deselect artifacts to remove from ${pkg}:`,
     choices: ownedTargets.map(targetPath => ({
@@ -50,14 +48,15 @@ export async function runRemove(pkg: string): Promise<void> {
   }
 
   const isFullRemoval = toRemove.length === ownedTargets.length
+  const removedTargetSet = new Set(toRemove)
+  const removedEntries = ownedEntries.filter(owner => removedTargetSet.has(owner.targetPath))
+  const keptArtifacts = keptArtifactsFromTargets(ownedEntries, kept)
 
   await unlinkFiles(toRemove)
 
   const filesDeleted: string[] = []
   if (!isLocal) {
-    for (const targetPath of toRemove) {
-      const artifact = artifactForTarget(targetPath)
-      if (!artifact) continue
+    for (const artifact of new Set(removedEntries.map(owner => owner.artifact))) {
       const aiPath = `.ai/${artifact}`
       try {
         await rm(aiPath, { recursive: true, force: true })
@@ -68,20 +67,10 @@ export async function runRemove(pkg: string): Promise<void> {
     }
   }
 
-  const addedExcludes: string[] = []
   if (isFullRemoval) {
-    for (const targetPath of toRemove) removeOwnership(aiJson, targetPath)
     removePackage(aiJson, pkg)
   } else {
-    for (const targetPath of toRemove) {
-      removeOwnership(aiJson, targetPath)
-      const artifact = artifactForTarget(targetPath)
-      if (artifact) {
-        aiJson.packages[pkg].exclude ??= []
-        aiJson.packages[pkg].exclude!.push(artifact)
-        addedExcludes.push(artifact)
-      }
-    }
+    setLinked(aiJson, pkg, keptArtifacts)
   }
 
   await writeAiJson(aiJson)
@@ -94,14 +83,23 @@ export async function runRemove(pkg: string): Promise<void> {
     for (const f of filesDeleted) console.log(`  ✔ ${f}`)
   }
 
-  if (!isFullRemoval && addedExcludes.length > 0) {
-    console.log(`\nAdded to exclude (${addedExcludes.length}):`)
-    for (const e of addedExcludes) console.log(`  ○ ${e}`)
+  if (!isFullRemoval) {
+    console.log(`\nStill linked (${keptArtifacts.length}):`)
+    for (const e of keptArtifacts) console.log(`  ↩ ${e}`)
   }
 
   if (isFullRemoval) {
     console.log(`\nPackage "${pkg}" fully uninstalled.`)
   }
+}
+
+function keptArtifactsFromTargets(ownedEntries: OwnedTarget[], keptTargets: string[]): string[] {
+  const keptTargetSet = new Set(keptTargets)
+  return [...new Set(
+    ownedEntries
+      .filter(owner => keptTargetSet.has(owner.targetPath))
+      .map(owner => owner.artifact),
+  )]
 }
 
 export const removeCommand = new Command('remove')

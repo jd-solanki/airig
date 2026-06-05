@@ -6,8 +6,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { Octokit } from '@octokit/rest'
 import extractZip from 'extract-zip'
-import { PROVIDER_REGISTRY, rulesFor, listArtifacts } from '../lib/provider-registry.js'
-import { linkPackageArtifacts } from '../lib/linker.js'
+import { PROVIDER_REGISTRY, listArtifacts, targetPathsForArtifact } from '../lib/provider-registry.js'
+import { deriveTargetOwnership, linkPackageArtifacts } from '../lib/linker.js'
 import { readAiJson, writeAiJson, addPackage, type PackageEntry } from '../lib/ai-json.js'
 import { fetchReleaseInfo, downloadAsset } from '../lib/github.js'
 
@@ -82,18 +82,6 @@ async function flattenSkills(skillsDir: string): Promise<void> {
   }
 }
 
-// Target symlink paths that would be created for an artifact given selected providers
-function computeTargetPaths(artifact: string, selectedProviders: string[]): string[] {
-  const targets: string[] = []
-  for (const rule of rulesFor(selectedProviders)) {
-    const relSource = rule.source.startsWith('.ai/') ? rule.source.slice('.ai/'.length) : rule.source
-    if (artifact.startsWith(relSource + '/')) {
-      targets.push(path.join(rule.target, artifact.slice(relSource.length + 1)))
-    }
-  }
-  return targets
-}
-
 // Copy selected artifacts from the temp extracted dir into .ai/
 async function copyArtifactsToAi(extractedAiDir: string, artifacts: string[]): Promise<void> {
   for (const artifact of artifacts) {
@@ -160,7 +148,7 @@ async function runAdd(pkg: string): Promise<void> {
       return
     }
 
-    const excludedArtifacts = allArtifacts.filter(a => !selectedArtifacts.includes(a))
+    const unlinkedArtifacts = allArtifacts.filter(a => !selectedArtifacts.includes(a))
 
     const selectedProviders = await checkbox({
       message: 'Select providers to wire:',
@@ -169,17 +157,29 @@ async function runAdd(pkg: string): Promise<void> {
 
     const ownershipValue = `${owner}/${repo}@${resolvedTag}`
     const aiJson = await readAiJson()
+    const packageKey = `${owner}/${repo}`
+    if (aiJson.packages[packageKey]) {
+      throw new Error(
+        `${packageKey} is already downloaded.\n` +
+        '  Use ohmyai link to change active artifacts, ohmyai update to change versions, or ohmyai remove first.',
+      )
+    }
+
+    const ownership = deriveTargetOwnership(aiJson)
     const packageConflicts: string[] = []
     const localOverrides: string[] = []
+    const localOverrideArtifacts = new Set<string>()
 
     for (const artifact of selectedArtifacts) {
-      for (const target of computeTargetPaths(artifact, selectedProviders)) {
-        const existing = aiJson.ownership[target]
-        if (!existing) continue
-        if (existing.startsWith('.ai/')) {
-          localOverrides.push(target)
-        } else {
-          packageConflicts.push(`  ${target}  (owned by ${existing})`)
+      for (const target of targetPathsForArtifact(artifact, selectedProviders)) {
+        const existingOwners = ownership.get(target) ?? []
+        for (const existing of existingOwners) {
+          if (existing.packageKey === '.') {
+            localOverrides.push(target)
+            localOverrideArtifacts.add(existing.artifact)
+          } else {
+            packageConflicts.push(`  ${target}  (owned by ${existing.packageKey}@${existing.version})`)
+          }
         }
       }
     }
@@ -198,11 +198,14 @@ async function runAdd(pkg: string): Promise<void> {
 
     await copyArtifactsToAi(extractedAiDir, selectedArtifacts)
 
-    const linkResult = await linkPackageArtifacts(aiJson, selectedProviders, ownershipValue)
+    const linkResult = await linkPackageArtifacts(selectedProviders, selectedArtifacts)
+    if (localOverrideArtifacts.size > 0 && aiJson.packages['.']) {
+      aiJson.packages['.'].linked = aiJson.packages['.'].linked
+        .filter(artifact => !localOverrideArtifacts.has(artifact))
+    }
 
-    const entry: PackageEntry = { version: resolvedTag }
-    if (excludedArtifacts.length > 0) entry.exclude = excludedArtifacts
-    addPackage(aiJson, `${owner}/${repo}`, entry)
+    const entry: PackageEntry = { version: resolvedTag, linked: selectedArtifacts }
+    addPackage(aiJson, packageKey, entry)
     await writeAiJson(aiJson)
 
     console.log(`\nInstalled ${owner}/${repo}@${resolvedTag}`)
@@ -210,9 +213,9 @@ async function runAdd(pkg: string): Promise<void> {
       console.log(`\nLinked (${linkResult.linked.length}):`)
       for (const p of linkResult.linked) console.log(`  ✔ ${p}`)
     }
-    if (excludedArtifacts.length > 0) {
-      console.log(`\nExcluded (${excludedArtifacts.length}):`)
-      for (const e of excludedArtifacts) console.log(`  ○ ${e}`)
+    if (unlinkedArtifacts.length > 0) {
+      console.log(`\nNot linked (${unlinkedArtifacts.length}):`)
+      for (const e of unlinkedArtifacts) console.log(`  ○ ${e}`)
     }
     if (localOverrides.length > 0) {
       console.log(`\nLocally-managed entries overwritten (${localOverrides.length}):`)
@@ -228,7 +231,7 @@ async function runAdd(pkg: string): Promise<void> {
 }
 
 export const addCommand = new Command('add')
-  .description('Install an immutable release into .ai/ with ownership tracking')
+  .description('Install an immutable release into .ai/ with linked artifact tracking')
   .argument('<package>', 'Package to install, e.g. owner/repo or owner/repo@1.2.0')
   .action(async (pkg: string) => {
     try {

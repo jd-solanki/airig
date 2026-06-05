@@ -3,8 +3,14 @@ import { mkdtemp, mkdir, writeFile, lstat, symlink, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { linkProviders, unlinkFiles } from '../src/lib/linker.js'
-import { readAiJson } from '../src/lib/ai-json.js'
+import {
+  deriveTargetOwnership,
+  linkLocalFiles,
+  linkPackageArtifacts,
+  linkProviders,
+  unlinkFiles,
+} from '../src/lib/linker.js'
+import { readAiJson, type AiJson } from '../src/lib/ai-json.js'
 
 let tmpDir: string
 let originalCwd: string
@@ -45,7 +51,7 @@ describe('linkProviders', () => {
     expect(existsSync('.claude/agents')).toBe(true)
   })
 
-  it('is idempotent — running twice skips already-correct symlinks', async () => {
+  it('is idempotent when running twice', async () => {
     await makeFile('.ai/.claude/agents/agent.md')
 
     await linkProviders(['claude'])
@@ -85,48 +91,81 @@ describe('linkProviders', () => {
     expect(stat.isSymbolicLink()).toBe(true)
   })
 
-  it('writes ownership entries to ai.json', async () => {
+  it('writes "." package entry with a positive linked list', async () => {
     await makeFile('.ai/.claude/agents/agent.md')
 
     await linkProviders(['claude'])
 
     const aiJson = await readAiJson()
-    expect(aiJson.ownership['.claude/agents/agent.md']).toBe('.ai/.claude/agents/agent.md')
+    expect(aiJson).toEqual({
+      packages: { '.': { version: '*', linked: ['.claude/agents/agent.md'] } },
+    })
   })
+})
 
-  it('writes "." package entry to ai.json', async () => {
-    await makeFile('.ai/.claude/agents/agent.md')
-
-    await linkProviders(['claude'])
-
-    const aiJson = await readAiJson()
-    expect(aiJson.packages['.']).toEqual({ version: '*' })
-  })
-
-  it('uses provided ownershipValue instead of source path', async () => {
-    await makeFile('.ai/.claude/agents/agent.md')
-
-    await linkProviders(['claude'], 'owner/repo@1.0.0')
-
-    const aiJson = await readAiJson()
-    expect(aiJson.ownership['.claude/agents/agent.md']).toBe('owner/repo@1.0.0')
-    expect(aiJson.packages['.']).toBeUndefined()
-  })
-
-  it('skips files in the exclude list', async () => {
+describe('linkLocalFiles', () => {
+  it('only links selected local artifacts and persists them in linked', async () => {
     await makeFile('.ai/.claude/agents/agent.md')
     await makeFile('.ai/.claude/agents/scratch.md')
-    await makeFile('.ai/ai.json', JSON.stringify({
-      packages: { '.': { version: '*', exclude: ['.claude/agents/scratch.md'] } },
-      ownership: {},
-    }))
+    const aiJson: AiJson = { packages: { '.': { version: '*', linked: [] } } }
 
-    const result = await linkProviders(['claude'])
+    const result = await linkLocalFiles(aiJson, ['claude'], new Set(['.ai/.claude/agents/agent.md']))
 
     expect(result.linked).toEqual(['.claude/agents/agent.md'])
-    expect(result.skipped).toEqual([{ path: '.claude/agents/scratch.md', reason: 'excluded' }])
     expect(existsSync('.claude/agents/agent.md')).toBe(true)
     expect(existsSync('.claude/agents/scratch.md')).toBe(false)
+    expect(aiJson.packages['.'].linked).toEqual(['.claude/agents/agent.md'])
+  })
+})
+
+describe('linkPackageArtifacts', () => {
+  it('links only the selected remote package artifacts', async () => {
+    await makeFile('.ai/.claude/agents/agent.md')
+    await makeFile('.ai/.claude/agents/scratch.md')
+
+    const result = await linkPackageArtifacts(['claude'], ['.claude/agents/agent.md'])
+
+    expect(result.linked).toEqual(['.claude/agents/agent.md'])
+    expect(existsSync('.claude/agents/agent.md')).toBe(true)
+    expect(existsSync('.claude/agents/scratch.md')).toBe(false)
+  })
+})
+
+describe('deriveTargetOwnership', () => {
+  it('expands linked artifacts into concrete target ownership', () => {
+    const ownership = deriveTargetOwnership({
+      packages: {
+        '.': { version: '*', linked: ['skills/local'] },
+        'owner/repo': { version: '1.0.0', linked: ['.codex/commands/review.md'] },
+      },
+    })
+
+    expect(ownership.get('.agents/skills/local')).toEqual([{
+      packageKey: '.',
+      version: '*',
+      artifact: 'skills/local',
+      targetPath: '.agents/skills/local',
+    }])
+    expect(ownership.get('.codex/prompts/review.md')).toEqual([{
+      packageKey: 'owner/repo',
+      version: '1.0.0',
+      artifact: '.codex/commands/review.md',
+      targetPath: '.codex/prompts/review.md',
+    }])
+  })
+
+  it('exposes remote package conflicts through the derived target index', () => {
+    const ownership = deriveTargetOwnership({
+      packages: {
+        'owner/one': { version: '1.0.0', linked: ['skills/tdd'] },
+        'owner/two': { version: '2.0.0', linked: ['skills/tdd'] },
+      },
+    })
+
+    expect(ownership.get('.agents/skills/tdd')?.map(owner => owner.packageKey)).toEqual([
+      'owner/one',
+      'owner/two',
+    ])
   })
 })
 
@@ -141,7 +180,7 @@ describe('unlinkFiles', () => {
     expect(existsSync('.claude/agents/agent.md')).toBe(false)
   })
 
-  it('removes a directory symlink (skills)', async () => {
+  it('removes a directory symlink', async () => {
     await makeFile('.ai/skills/tdd/SKILL.md')
     await mkdir('.agents/skills', { recursive: true })
     await symlink(path.resolve('.ai/skills/tdd'), '.agents/skills/tdd')
@@ -152,11 +191,11 @@ describe('unlinkFiles', () => {
     expect(existsSync('.ai/skills/tdd/SKILL.md')).toBe(true)
   })
 
-  it('is idempotent — no error when symlink is already gone', async () => {
+  it('is idempotent when a symlink is already gone', async () => {
     await expect(unlinkFiles(['.claude/agents/nonexistent.md'])).resolves.not.toThrow()
   })
 
-  it('does not remove real files, only symlinks', async () => {
+  it('does not remove real files', async () => {
     await makeFile('.claude/agents/real.md', 'not a symlink')
 
     await unlinkFiles(['.claude/agents/real.md'])

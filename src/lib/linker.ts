@@ -1,9 +1,10 @@
 import { readdir, symlink, mkdir, lstat, readlink, unlink } from 'node:fs/promises'
 import path from 'node:path'
-import { rulesFor, listArtifacts } from './provider-registry.js'
+import { rulesFor, listArtifacts, targetPathsForArtifact } from './provider-registry.js'
 import type { AiJson } from './ai-json.js'
+import { readAiJson, writeAiJson } from './ai-json.js'
 
-export type SkipReason = 'already-linked' | 'conflict-real-file' | 'conflict-wrong-symlink' | 'excluded'
+export type SkipReason = 'already-linked' | 'conflict-real-file' | 'conflict-wrong-symlink'
 
 export interface SkippedEntry {
   path: string
@@ -20,13 +21,27 @@ export interface LinkableEntry {
   label: string
 }
 
-function isExcluded(aiRelativePath: string, excludeList: string[]): boolean {
-  for (const exc of excludeList) {
-    if (exc === aiRelativePath) return true
-    const dir = exc.endsWith('/') ? exc : exc + '/'
-    if (aiRelativePath.startsWith(dir)) return true
+export interface OwnedTarget {
+  packageKey: string
+  version: string
+  artifact: string
+  targetPath: string
+}
+
+export function deriveTargetOwnership(aiJson: AiJson): Map<string, OwnedTarget[]> {
+  const ownership = new Map<string, OwnedTarget[]>()
+
+  for (const [packageKey, entry] of Object.entries(aiJson.packages)) {
+    for (const artifact of entry.linked) {
+      for (const targetPath of targetPathsForArtifact(artifact)) {
+        const owners = ownership.get(targetPath) ?? []
+        owners.push({ packageKey, version: entry.version, artifact, targetPath })
+        ownership.set(targetPath, owners)
+      }
+    }
   }
-  return false
+
+  return ownership
 }
 
 export async function unlinkFiles(targetPaths: string[]): Promise<void> {
@@ -40,11 +55,9 @@ export async function unlinkFiles(targetPaths: string[]): Promise<void> {
   }
 }
 
-export async function scanLinkable(providers: string[], exclude: string[]): Promise<LinkableEntry[]> {
+export async function scanLinkable(providers: string[]): Promise<LinkableEntry[]> {
   const artifacts = await listArtifacts('.ai', providers)
-  return artifacts
-    .filter(a => !isExcluded(a, exclude))
-    .map(a => ({ sourcePath: `.ai/${a}`, label: a }))
+  return artifacts.map(a => ({ sourcePath: `.ai/${a}`, label: a }))
 }
 
 async function iterateRuleEntries(
@@ -68,8 +81,6 @@ async function iterateRuleEntries(
 async function createSymlink(
   sourcePath: string,
   targetPath: string,
-  ownershipValue: string,
-  aiJson: AiJson,
   result: LinkResult,
 ): Promise<void> {
   let targetStat: Awaited<ReturnType<typeof lstat>> | undefined
@@ -97,19 +108,27 @@ async function createSymlink(
 
   const relSource = path.relative(path.dirname(targetPath), sourcePath)
   await symlink(relSource, targetPath)
-  aiJson.ownership[targetPath] = ownershipValue
   result.linked.push(targetPath)
 }
 
 export async function linkPackageArtifacts(
-  aiJson: AiJson,
   providers: string[],
-  ownershipValue: string,
+  artifactLabels: string[],
 ): Promise<LinkResult> {
   const result: LinkResult = { linked: [], skipped: [] }
-  await iterateRuleEntries(providers, (sourcePath, targetPath) =>
-    createSymlink(sourcePath, targetPath, ownershipValue, aiJson, result),
-  )
+  const allowedTargets = new Map<string, string>()
+
+  for (const artifact of artifactLabels) {
+    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
+      allowedTargets.set(targetPath, `.ai/${artifact}`)
+    }
+  }
+
+  for (const [targetPath, sourcePath] of allowedTargets) {
+    await mkdir(path.dirname(targetPath), { recursive: true })
+    await createSymlink(sourcePath, targetPath, result)
+  }
+
   return result
 }
 
@@ -118,21 +137,42 @@ export async function linkLocalFiles(
   providers: string[],
   allowedSources?: Set<string>,
 ): Promise<LinkResult> {
-  const exclude = aiJson.packages['.']?.exclude ?? []
   const result: LinkResult = { linked: [], skipped: [] }
+  const selectedLabels: string[] = []
+
   await iterateRuleEntries(providers, async (sourcePath, targetPath) => {
     const aiRelativePath = sourcePath.startsWith('.ai/')
       ? sourcePath.slice('.ai/'.length)
       : sourcePath
 
-    if (isExcluded(aiRelativePath, exclude)) {
-      result.skipped.push({ path: targetPath, reason: 'excluded' })
-      return
-    }
-
     if (allowedSources && !allowedSources.has(sourcePath)) return
 
-    await createSymlink(sourcePath, targetPath, sourcePath, aiJson, result)
+    selectedLabels.push(aiRelativePath)
+    await createSymlink(sourcePath, targetPath, result)
   })
+
+  aiJson.packages['.'] ??= { version: '*', linked: [] }
+  aiJson.packages['.'].linked = [...new Set(selectedLabels)]
+
+  return result
+}
+
+export async function linkProviders(
+  providers: string[],
+  artifactLabels?: string[],
+  packageKey = '.',
+): Promise<LinkResult> {
+  const aiJson = await readAiJson()
+  const labels = artifactLabels ?? await listArtifacts('.ai', providers)
+
+  if (packageKey === '.') {
+    aiJson.packages['.'] ??= { version: '*', linked: [] }
+  }
+  if (aiJson.packages[packageKey]) {
+    aiJson.packages[packageKey].linked = [...new Set(labels)]
+  }
+
+  const result = await linkPackageArtifacts(providers, labels)
+  await writeAiJson(aiJson)
   return result
 }

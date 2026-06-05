@@ -4,12 +4,11 @@ import path from 'node:path'
 
 export interface PackageEntry {
   version: string
-  exclude?: string[]
+  linked: string[]
 }
 
 export interface AiJson {
   packages: Record<string, PackageEntry>
-  ownership: Record<string, string>
 }
 
 const AI_JSON_PATH = '.ai/ai.json'
@@ -18,19 +17,49 @@ function validate(data: unknown): AiJson {
   if (
     typeof data !== 'object' || data === null ||
     typeof (data as Record<string, unknown>).packages !== 'object' ||
-    typeof (data as Record<string, unknown>).ownership !== 'object'
+    (data as Record<string, unknown>).packages === null
   ) {
     throw new Error(
-      `${AI_JSON_PATH} is malformed: expected { "packages": {}, "ownership": {} }\n` +
+      `${AI_JSON_PATH} is malformed: expected { "packages": {} }\n` +
       `  Fix: restore the missing top-level keys, or delete ${AI_JSON_PATH} to reset it.`,
     )
   }
-  return data as AiJson
+
+  const packages: Record<string, PackageEntry> = {}
+  for (const [key, rawEntry] of Object.entries((data as { packages: Record<string, unknown> }).packages)) {
+    if (typeof rawEntry !== 'object' || rawEntry === null) {
+      throw new Error(`${AI_JSON_PATH} is malformed: package "${key}" must be an object.`)
+    }
+
+    const entry = rawEntry as Record<string, unknown>
+    if (typeof entry.version !== 'string' || entry.version.length === 0) {
+      throw new Error(`${AI_JSON_PATH} is malformed: package "${key}" must have a version string.`)
+    }
+    if (key === '.' && entry.version !== '*') {
+      throw new Error(`${AI_JSON_PATH} is malformed: local package "." must use version "*".`)
+    }
+    if (key !== '.' && entry.version === '*') {
+      throw new Error(`${AI_JSON_PATH} is malformed: remote package "${key}" must use an exact version.`)
+    }
+    if (entry.linked !== undefined && (
+      !Array.isArray(entry.linked) ||
+      entry.linked.some(label => typeof label !== 'string' || label.length === 0)
+    )) {
+      throw new Error(`${AI_JSON_PATH} is malformed: package "${key}" linked must be a string array.`)
+    }
+
+    packages[key] = {
+      version: entry.version,
+      linked: entry.linked === undefined ? [] : [...entry.linked] as string[],
+    }
+  }
+
+  return { packages }
 }
 
 export async function readAiJson(): Promise<AiJson> {
   if (!existsSync(AI_JSON_PATH)) {
-    return { packages: {}, ownership: {} }
+    return { packages: {} }
   }
   const raw = await readFile(AI_JSON_PATH, 'utf-8')
   return validate(JSON.parse(raw))
@@ -55,10 +84,23 @@ export function removePackage(data: AiJson, key: string): void {
   delete data.packages[key]
 }
 
-export function addOwnership(data: AiJson, targetPath: string, value: string): void {
-  data.ownership[targetPath] = value
+export function setLinked(data: AiJson, key: string, linked: string[]): void {
+  if (!data.packages[key]) {
+    throw new Error(`Package "${key}" is not installed.`)
+  }
+  data.packages[key].linked = [...new Set(linked)]
 }
 
-export function removeOwnership(data: AiJson, targetPath: string): void {
-  delete data.ownership[targetPath]
+export function addLinked(data: AiJson, key: string, artifact: string): void {
+  if (!data.packages[key]) {
+    throw new Error(`Package "${key}" is not installed.`)
+  }
+  if (!data.packages[key].linked.includes(artifact)) {
+    data.packages[key].linked.push(artifact)
+  }
+}
+
+export function removeLinked(data: AiJson, key: string, artifact: string): void {
+  if (!data.packages[key]) return
+  data.packages[key].linked = data.packages[key].linked.filter(a => a !== artifact)
 }

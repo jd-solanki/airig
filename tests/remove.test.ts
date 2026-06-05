@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, rm, mkdir, writeFile, symlink, lstat } from 'node:fs/promises'
+import { mkdtemp, rm, mkdir, writeFile, symlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -39,16 +39,12 @@ async function seedAiJson(data: AiJson) {
   await writeAiJson(data)
 }
 
-// ─── error handling ──────────────────────────────────────────────────────────
-
 describe('error handling', () => {
   it('throws when the package is not installed', async () => {
-    await seedAiJson({ packages: {}, ownership: {} })
+    await seedAiJson({ packages: {} })
     await expect(runRemove('unknown/pkg')).rejects.toThrow('not installed')
   })
 })
-
-// ─── remote package ───────────────────────────────────────────────────────────
 
 describe('remote package (owner/repo)', () => {
   async function setupRemote() {
@@ -58,17 +54,14 @@ describe('remote package (owner/repo)', () => {
     await makeSymlink('.ai/skills/coding', '.agents/skills/coding')
 
     await seedAiJson({
-      packages: { 'owner/repo': { version: '1.0.0' } },
-      ownership: {
-        '.agents/skills/tdd': 'owner/repo@1.0.0',
-        '.agents/skills/coding': 'owner/repo@1.0.0',
+      packages: {
+        'owner/repo': { version: '1.0.0', linked: ['skills/tdd', 'skills/coding'] },
       },
     })
   }
 
-  it('does nothing when user keeps all artifacts (unchecks nothing)', async () => {
+  it('does nothing when user keeps all artifacts', async () => {
     await setupRemote()
-    // checkbox returns both targets = user kept all = nothing to remove
     vi.mocked(checkbox).mockResolvedValue(['.agents/skills/tdd', '.agents/skills/coding'])
 
     await runRemove('owner/repo')
@@ -81,7 +74,6 @@ describe('remote package (owner/repo)', () => {
 
   it('fully removes all symlinks, .ai/ files, and package entry', async () => {
     await setupRemote()
-    // checkbox returns [] = user unchecked all = remove everything
     vi.mocked(checkbox).mockResolvedValue([])
 
     await runRemove('owner/repo')
@@ -92,13 +84,11 @@ describe('remote package (owner/repo)', () => {
     expect(existsSync('.ai/skills/coding')).toBe(false)
     const aiJson = await readAiJson()
     expect(aiJson.packages['owner/repo']).toBeUndefined()
-    expect(aiJson.ownership['.agents/skills/tdd']).toBeUndefined()
-    expect(aiJson.ownership['.agents/skills/coding']).toBeUndefined()
+    expect(aiJson).not.toHaveProperty('ownership')
   })
 
-  it('partially removes selected artifacts and updates exclude list', async () => {
+  it('partially removes selected artifacts and keeps linked as a positive list', async () => {
     await setupRemote()
-    // checkbox returns [tdd] = user kept tdd, unchecked coding = remove coding only
     vi.mocked(checkbox).mockResolvedValue(['.agents/skills/tdd'])
 
     await runRemove('owner/repo')
@@ -109,14 +99,12 @@ describe('remote package (owner/repo)', () => {
     expect(existsSync('.ai/skills/coding')).toBe(false)
 
     const aiJson = await readAiJson()
-    expect(aiJson.packages['owner/repo']).toBeDefined()
-    expect(aiJson.packages['owner/repo'].exclude).toContain('skills/coding')
-    expect(aiJson.ownership['.agents/skills/tdd']).toBe('owner/repo@1.0.0')
-    expect(aiJson.ownership['.agents/skills/coding']).toBeUndefined()
+    expect(aiJson.packages['owner/repo']).toEqual({ version: '1.0.0', linked: ['skills/tdd'] })
+    expect(aiJson).not.toHaveProperty('ownership')
   })
 
-  it('cleans up package entry when ownership map is already empty', async () => {
-    await seedAiJson({ packages: { 'owner/repo': { version: '1.0.0' } }, ownership: {} })
+  it('cleans up package entry when linked list is empty', async () => {
+    await seedAiJson({ packages: { 'owner/repo': { version: '1.0.0', linked: [] } } })
 
     await runRemove('owner/repo')
 
@@ -124,14 +112,14 @@ describe('remote package (owner/repo)', () => {
     expect(aiJson.packages['owner/repo']).toBeUndefined()
   })
 
-  it('reverse-maps codex prompts target to .codex/commands artifact path in exclude', async () => {
+  it('reverse-maps codex commands into .codex/prompts target paths', async () => {
     await makeFile('.ai/.codex/commands/foo.md')
     await makeSymlink('.ai/.codex/commands/foo.md', '.codex/prompts/foo.md')
     await seedAiJson({
-      packages: { 'owner/repo': { version: '1.0.0' } },
-      ownership: { '.codex/prompts/foo.md': 'owner/repo@1.0.0' },
+      packages: {
+        'owner/repo': { version: '1.0.0', linked: ['.codex/commands/foo.md'] },
+      },
     })
-    // keep nothing = remove foo.md
     vi.mocked(checkbox).mockResolvedValue([])
 
     await runRemove('owner/repo')
@@ -141,8 +129,6 @@ describe('remote package (owner/repo)', () => {
   })
 })
 
-// ─── local package (.) ────────────────────────────────────────────────────────
-
 describe('local package (.)', () => {
   async function setupLocal() {
     await makeFile('.ai/skills/coding/SKILL.md')
@@ -151,10 +137,8 @@ describe('local package (.)', () => {
     await makeSymlink('.ai/.claude/agents/reviewer.md', '.claude/agents/reviewer.md')
 
     await seedAiJson({
-      packages: { '.': { version: '*' } },
-      ownership: {
-        '.agents/skills/coding': '.ai/skills/coding',
-        '.claude/agents/reviewer.md': '.ai/.claude/agents/reviewer.md',
+      packages: {
+        '.': { version: '*', linked: ['skills/coding', '.claude/agents/reviewer.md'] },
       },
     })
   }
@@ -174,9 +158,8 @@ describe('local package (.)', () => {
     expect(aiJson.packages['.']).toBeUndefined()
   })
 
-  it('partially removes symlinks and updates exclude, keeps .ai/ files', async () => {
+  it('partially removes symlinks and keeps remaining local artifacts linked', async () => {
     await setupLocal()
-    // keep reviewer, uncheck coding = remove coding symlink only
     vi.mocked(checkbox).mockResolvedValue(['.claude/agents/reviewer.md'])
 
     await runRemove('.')
@@ -186,9 +169,7 @@ describe('local package (.)', () => {
     expect(existsSync('.ai/skills/coding/SKILL.md')).toBe(true)
 
     const aiJson = await readAiJson()
-    expect(aiJson.packages['.']).toBeDefined()
-    expect(aiJson.packages['.'].exclude).toContain('skills/coding')
-    expect(aiJson.ownership['.claude/agents/reviewer.md']).toBeDefined()
-    expect(aiJson.ownership['.agents/skills/coding']).toBeUndefined()
+    expect(aiJson.packages['.']).toEqual({ version: '*', linked: ['.claude/agents/reviewer.md'] })
+    expect(aiJson).not.toHaveProperty('ownership')
   })
 })

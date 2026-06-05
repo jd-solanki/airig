@@ -8,14 +8,12 @@ const SKIP_REASON_LABEL: Record<SkipReason, string> = {
   'already-linked':          '↩',
   'conflict-real-file':      '⚠',
   'conflict-wrong-symlink':  '⚠',
-  'excluded':                '○',
 }
 
 const SKIP_REASON_TEXT: Record<SkipReason, string> = {
   'already-linked':          'already linked',
   'conflict-real-file':      'real file at target',
   'conflict-wrong-symlink':  'symlinked elsewhere',
-  'excluded':                'excluded',
 }
 
 export const linkCommand = new Command('link')
@@ -52,9 +50,9 @@ async function runLink(provider: string | undefined, opts: { singleLineSummary?:
     }
 
     const aiJson = await readAiJson()
-    aiJson.packages['.'] ??= { version: '*' }
-    const exclude = aiJson.packages['.'].exclude ?? []
-    const linkable = await scanLinkable(providers, exclude)
+    aiJson.packages['.'] ??= { version: '*', linked: [] }
+    const currentLinked = new Set(aiJson.packages['.'].linked)
+    const linkable = await scanLinkable(providers)
 
     if (linkable.length === 0) {
       console.log('No linkable files found.')
@@ -63,10 +61,16 @@ async function runLink(provider: string | undefined, opts: { singleLineSummary?:
 
     const selectedSources = await checkbox({
       message: 'Select files to link:',
-      choices: linkable.map(e => ({ value: e.sourcePath, name: e.label, checked: true })),
+      choices: linkable.map(e => ({
+        value: e.sourcePath,
+        name: e.label,
+        checked: currentLinked.size === 0 || currentLinked.has(e.label),
+      })),
     })
     if (selectedSources.length === 0) {
       console.log('No files selected.')
+      aiJson.packages['.'].linked = []
+      await writeAiJson(aiJson)
       return
     }
 
