@@ -1,8 +1,8 @@
 import { Command } from 'commander'
 import { checkbox } from '@inquirer/prompts'
 import { PROVIDER_REGISTRY } from '../lib/provider-registry.js'
-import { linkLocalFiles, scanLinkable, type SkipReason } from '../lib/linker.js'
-import { readAiJson, writeAiJson } from '../lib/ai-json.js'
+import { reconcilePackageLinks, scanLinkable, type SkipReason } from '../lib/linker.js'
+import { readAiJson, writeAiJson, type AiJson } from '../lib/ai-json.js'
 
 const SKIP_REASON_LABEL: Record<SkipReason, string> = {
   'already-linked':          '↩',
@@ -29,73 +29,97 @@ export const linkCommand = new Command('link')
     }
   })
 
-async function runLink(provider: string | undefined, opts: { singleLineSummary?: boolean }): Promise<void> {
-    let providers: string[]
+interface LinkOptions {
+  singleLineSummary?: boolean
+  packageKey?: string
+}
 
-    if (provider) {
-      if (!PROVIDER_REGISTRY[provider]) {
-        console.error(`✖ Unknown provider: ${provider}. Available: ${Object.keys(PROVIDER_REGISTRY).join(', ')}`)
-        process.exit(1)
-      }
-      providers = [provider]
-    } else {
-      providers = await checkbox({
-        message: 'Select providers to link:',
-        choices: Object.keys(PROVIDER_REGISTRY).map(p => ({ value: p, name: p })),
-      })
-      if (providers.length === 0) {
-        console.log('No providers selected.')
-        return
-      }
+export async function runLink(provider: string | undefined, opts: LinkOptions): Promise<void> {
+  let providers: string[]
+
+  if (provider) {
+    if (!PROVIDER_REGISTRY[provider]) {
+      console.error(`✖ Unknown provider: ${provider}. Available: ${Object.keys(PROVIDER_REGISTRY).join(', ')}`)
+      process.exit(1)
     }
-
-    const aiJson = await readAiJson()
-    aiJson.packages['.'] ??= { version: '*', linked: [] }
-    const currentLinked = new Set(aiJson.packages['.'].linked)
-    const linkable = await scanLinkable(providers)
-
-    if (linkable.length === 0) {
-      console.log('No linkable files found.')
-      return
-    }
-
-    const selectedSources = await checkbox({
-      message: 'Select files to link:',
-      choices: linkable.map(e => ({
-        value: e.sourcePath,
-        name: e.label,
-        checked: currentLinked.size === 0 || currentLinked.has(e.label),
-      })),
+    providers = [provider]
+  } else {
+    providers = await checkbox({
+      message: 'Select providers to link:',
+      choices: Object.keys(PROVIDER_REGISTRY).map(p => ({ value: p, name: p })),
     })
-    if (selectedSources.length === 0) {
-      console.log('No files selected.')
-      aiJson.packages['.'].linked = []
-      await writeAiJson(aiJson)
+    if (providers.length === 0) {
+      console.log('No providers selected.')
       return
     }
+  }
 
-    const { linked, skipped } = await linkLocalFiles(aiJson, providers, new Set(selectedSources))
-    await writeAiJson(aiJson)
+  const aiJson = await readAiJson()
+  const packageKey = resolveLinkPackage(aiJson, opts.packageKey)
+  if (packageKey === '.') aiJson.packages['.'] ??= { version: '*', linked: [] }
+  const currentLinked = new Set(aiJson.packages[packageKey].linked)
+  const linkable = await scanLinkable(providers)
 
-    if (opts.singleLineSummary) {
-      console.log(`Linked ${linked.length}, skipped ${skipped.length}.`)
-      return
+  if (linkable.length === 0) {
+    console.log('No linkable files found.')
+    return
+  }
+
+  const selectedLabels = await checkbox({
+    message: 'Select files to link:',
+    choices: linkable.map(e => ({
+      value: e.label,
+      name: e.label,
+      checked: currentLinked.size === 0 || currentLinked.has(e.label),
+    })),
+  })
+
+  const { linked, skipped, unlinked } = await reconcilePackageLinks(
+    aiJson,
+    packageKey,
+    providers,
+    selectedLabels,
+    linkable.map(entry => entry.label),
+  )
+  await writeAiJson(aiJson)
+
+  if (opts.singleLineSummary) {
+    console.log(`Linked ${linked.length}, unlinked ${unlinked.length}, skipped ${skipped.length}.`)
+    return
+  }
+
+  if (linked.length === 0 && unlinked.length === 0 && skipped.length === 0) {
+    console.log('Nothing to link.')
+    return
+  }
+
+  if (linked.length > 0) {
+    console.log(`\nLinked (${linked.length}):`)
+    for (const p of linked) console.log(`  ✔ ${p}`)
+  }
+
+  if (unlinked.length > 0) {
+    console.log(`\nUnlinked (${unlinked.length}):`)
+    for (const p of unlinked) console.log(`  ✔ ${p}`)
+  }
+
+  if (skipped.length > 0) {
+    console.log(`\nSkipped (${skipped.length}):`)
+    for (const s of skipped) {
+      console.log(`  ${SKIP_REASON_LABEL[s.reason]} ${s.path}  ${SKIP_REASON_TEXT[s.reason]}`)
     }
+  }
+}
 
-    if (linked.length === 0 && skipped.length === 0) {
-      console.log('Nothing to link.')
-      return
+function resolveLinkPackage(aiJson: AiJson, requestedPackageKey: string | undefined): string {
+  if (requestedPackageKey) {
+    if (!aiJson.packages[requestedPackageKey]) {
+      throw new Error(`Package "${requestedPackageKey}" is not installed.`)
     }
+    return requestedPackageKey
+  }
 
-    if (linked.length > 0) {
-      console.log(`\nLinked (${linked.length}):`)
-      for (const p of linked) console.log(`  ✔ ${p}`)
-    }
-
-    if (skipped.length > 0) {
-      console.log(`\nSkipped (${skipped.length}):`)
-      for (const s of skipped) {
-        console.log(`  ${SKIP_REASON_LABEL[s.reason]} ${s.path}  ${SKIP_REASON_TEXT[s.reason]}`)
-      }
-    }
+  const installedPackages = Object.keys(aiJson.packages)
+  if (installedPackages.length === 1) return installedPackages[0]
+  return '.'
 }

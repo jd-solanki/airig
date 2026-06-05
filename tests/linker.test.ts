@@ -5,9 +5,11 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   deriveTargetOwnership,
+  findRemotePackageConflicts,
   linkLocalFiles,
   linkPackageArtifacts,
   linkProviders,
+  reconcilePackageLinks,
   unlinkFiles,
 } from '../src/lib/linker.js'
 import { readAiJson, type AiJson } from '../src/lib/ai-json.js'
@@ -109,12 +111,82 @@ describe('linkLocalFiles', () => {
     await makeFile('.ai/.claude/agents/scratch.md')
     const aiJson: AiJson = { packages: { '.': { version: '*', linked: [] } } }
 
-    const result = await linkLocalFiles(aiJson, ['claude'], new Set(['.ai/.claude/agents/agent.md']))
+    const result = await linkLocalFiles(aiJson, ['claude'], new Set(['.claude/agents/agent.md']))
 
     expect(result.linked).toEqual(['.claude/agents/agent.md'])
     expect(existsSync('.claude/agents/agent.md')).toBe(true)
     expect(existsSync('.claude/agents/scratch.md')).toBe(false)
     expect(aiJson.packages['.'].linked).toEqual(['.claude/agents/agent.md'])
+  })
+})
+
+describe('reconcilePackageLinks', () => {
+  it('unlinks newly unchecked artifacts without deleting .ai sources', async () => {
+    await makeFile('.ai/.claude/agents/keep.md')
+    await makeFile('.ai/.claude/agents/remove.md')
+    await mkdir('.claude/agents', { recursive: true })
+    await symlink(path.resolve('.ai/.claude/agents/keep.md'), '.claude/agents/keep.md')
+    await symlink(path.resolve('.ai/.claude/agents/remove.md'), '.claude/agents/remove.md')
+    const aiJson: AiJson = {
+      packages: {
+        '.': { version: '*', linked: ['.claude/agents/keep.md', '.claude/agents/remove.md'] },
+      },
+    }
+
+    const result = await reconcilePackageLinks(
+      aiJson,
+      '.',
+      ['claude'],
+      ['.claude/agents/keep.md'],
+      ['.claude/agents/keep.md', '.claude/agents/remove.md'],
+    )
+
+    expect(result.unlinked).toEqual(['.claude/agents/remove.md'])
+    expect(existsSync('.claude/agents/remove.md')).toBe(false)
+    expect(existsSync('.ai/.claude/agents/remove.md')).toBe(true)
+    expect(aiJson.packages['.'].linked).toEqual(['.claude/agents/keep.md'])
+  })
+
+  it('blocks remote package conflicts before writing links', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md')
+    const aiJson: AiJson = {
+      packages: {
+        'owner/one': { version: '1.0.0', linked: ['skills/tdd'] },
+        'owner/two': { version: '2.0.0', linked: [] },
+      },
+    }
+
+    await expect(reconcilePackageLinks(
+      aiJson,
+      'owner/two',
+      ['claude'],
+      ['skills/tdd'],
+      ['skills/tdd'],
+    )).rejects.toThrow('Conflicts detected')
+    expect(existsSync('.agents/skills/tdd')).toBe(false)
+    expect(aiJson.packages['owner/two'].linked).toEqual([])
+  })
+
+  it('removes local ownership when a remote package takes over a local link', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md')
+    const aiJson: AiJson = {
+      packages: {
+        '.': { version: '*', linked: ['skills/tdd'] },
+        'owner/repo': { version: '1.0.0', linked: [] },
+      },
+    }
+
+    const result = await reconcilePackageLinks(
+      aiJson,
+      'owner/repo',
+      ['claude'],
+      ['skills/tdd'],
+      ['skills/tdd'],
+    )
+
+    expect(result.localOverrides).toEqual(['.agents/skills/tdd'])
+    expect(aiJson.packages['.'].linked).toEqual([])
+    expect(aiJson.packages['owner/repo'].linked).toEqual(['skills/tdd'])
   })
 })
 
@@ -166,6 +238,19 @@ describe('deriveTargetOwnership', () => {
       'owner/one',
       'owner/two',
     ])
+  })
+})
+
+describe('findRemotePackageConflicts', () => {
+  it('ignores local ownership for remote takeovers', () => {
+    const conflicts = findRemotePackageConflicts({
+      packages: {
+        '.': { version: '*', linked: ['skills/tdd'] },
+        'owner/repo': { version: '1.0.0', linked: [] },
+      },
+    }, 'owner/repo', ['claude'], ['skills/tdd'])
+
+    expect(conflicts).toHaveLength(0)
   })
 })
 

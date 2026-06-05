@@ -1,6 +1,6 @@
-import { readdir, symlink, mkdir, lstat, readlink, unlink } from 'node:fs/promises'
+import { symlink, mkdir, lstat, readlink, unlink } from 'node:fs/promises'
 import path from 'node:path'
-import { rulesFor, listArtifacts, targetPathsForArtifact } from './provider-registry.js'
+import { listArtifacts, targetPathsForArtifact } from './provider-registry.js'
 import type { AiJson } from './ai-json.js'
 import { readAiJson, writeAiJson } from './ai-json.js'
 
@@ -16,8 +16,12 @@ export interface LinkResult {
   skipped: SkippedEntry[]
 }
 
+export interface ReconcileLinkResult extends LinkResult {
+  unlinked: string[]
+  localOverrides: string[]
+}
+
 export interface LinkableEntry {
-  sourcePath: string
   label: string
 }
 
@@ -26,6 +30,11 @@ export interface OwnedTarget {
   version: string
   artifact: string
   targetPath: string
+}
+
+export interface PackageConflict {
+  targetPath: string
+  owner: OwnedTarget
 }
 
 export function deriveTargetOwnership(aiJson: AiJson): Map<string, OwnedTarget[]> {
@@ -57,25 +66,7 @@ export async function unlinkFiles(targetPaths: string[]): Promise<void> {
 
 export async function scanLinkable(providers: string[]): Promise<LinkableEntry[]> {
   const artifacts = await listArtifacts('.ai', providers)
-  return artifacts.map(a => ({ sourcePath: `.ai/${a}`, label: a }))
-}
-
-async function iterateRuleEntries(
-  providers: string[],
-  callback: (sourcePath: string, targetPath: string) => Promise<void>,
-): Promise<void> {
-  for (const rule of rulesFor(providers)) {
-    let entries: string[]
-    try {
-      entries = await readdir(rule.source)
-    } catch {
-      continue
-    }
-    await mkdir(rule.target, { recursive: true })
-    for (const entry of entries) {
-      await callback(path.join(rule.source, entry), path.join(rule.target, entry))
-    }
-  }
+  return artifacts.map(label => ({ label }))
 }
 
 async function createSymlink(
@@ -132,29 +123,111 @@ export async function linkPackageArtifacts(
   return result
 }
 
+export function findRemotePackageConflicts(
+  aiJson: AiJson,
+  packageKey: string,
+  providers: string[],
+  artifactLabels: string[],
+): PackageConflict[] {
+  const ownership = deriveTargetOwnership(aiJson)
+  const conflicts: PackageConflict[] = []
+
+  for (const artifact of artifactLabels) {
+    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
+      for (const owner of ownership.get(targetPath) ?? []) {
+        if (owner.packageKey === packageKey || owner.packageKey === '.') continue
+        if (packageKey === '.') continue
+        conflicts.push({ targetPath, owner })
+      }
+    }
+  }
+
+  return conflicts
+}
+
+export async function reconcilePackageLinks(
+  aiJson: AiJson,
+  packageKey: string,
+  providers: string[],
+  selectedLabels: string[],
+  scopedLabels = selectedLabels,
+): Promise<ReconcileLinkResult> {
+  if (!aiJson.packages[packageKey]) {
+    throw new Error(`Package "${packageKey}" is not installed.`)
+  }
+
+  const selected = [...new Set(selectedLabels)]
+  const selectedSet = new Set(selected)
+  const scopedSet = new Set(scopedLabels)
+  const currentLinked = aiJson.packages[packageKey].linked
+  const preserved = currentLinked.filter(label => !scopedSet.has(label))
+  const removed = currentLinked.filter(label => scopedSet.has(label) && !selectedSet.has(label))
+  const conflicts = findRemotePackageConflicts(aiJson, packageKey, providers, selected)
+
+  if (conflicts.length > 0) {
+    throw new Error(
+      `Conflicts detected — the following symlinks are already owned by another package:\n` +
+      conflicts
+        .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
+        .join('\n') + '\n' +
+      '  Remove the conflicting package first with: ohmyai remove <owner/repo>',
+    )
+  }
+
+  const ownership = deriveTargetOwnership(aiJson)
+  const targetPathsToUnlink = new Set<string>()
+  for (const artifact of removed) {
+    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
+      const otherOwners = (ownership.get(targetPath) ?? [])
+        .filter(owner => owner.packageKey !== packageKey)
+      if (otherOwners.length === 0) targetPathsToUnlink.add(targetPath)
+    }
+  }
+
+  await unlinkFiles([...targetPathsToUnlink])
+
+  const localOverrides = new Set<string>()
+  const localOverrideArtifacts = new Set<string>()
+  if (packageKey !== '.') {
+    for (const artifact of selected) {
+      for (const targetPath of targetPathsForArtifact(artifact, providers)) {
+        for (const owner of ownership.get(targetPath) ?? []) {
+          if (owner.packageKey === '.') {
+            localOverrides.add(targetPath)
+            localOverrideArtifacts.add(owner.artifact)
+          }
+        }
+      }
+    }
+  }
+
+  if (localOverrideArtifacts.size > 0 && aiJson.packages['.']) {
+    aiJson.packages['.'].linked = aiJson.packages['.'].linked
+      .filter(artifact => !localOverrideArtifacts.has(artifact))
+  }
+
+  const { linked, skipped } = await linkPackageArtifacts(providers, selected)
+  aiJson.packages[packageKey].linked = [...new Set([...preserved, ...selected])]
+
+  return {
+    linked,
+    skipped,
+    unlinked: [...targetPathsToUnlink],
+    localOverrides: [...localOverrides],
+  }
+}
+
 export async function linkLocalFiles(
   aiJson: AiJson,
   providers: string[],
-  allowedSources?: Set<string>,
+  selectedLabels?: Set<string>,
 ): Promise<LinkResult> {
-  const result: LinkResult = { linked: [], skipped: [] }
-  const selectedLabels: string[] = []
-
-  await iterateRuleEntries(providers, async (sourcePath, targetPath) => {
-    const aiRelativePath = sourcePath.startsWith('.ai/')
-      ? sourcePath.slice('.ai/'.length)
-      : sourcePath
-
-    if (allowedSources && !allowedSources.has(sourcePath)) return
-
-    selectedLabels.push(aiRelativePath)
-    await createSymlink(sourcePath, targetPath, result)
-  })
-
   aiJson.packages['.'] ??= { version: '*', linked: [] }
-  aiJson.packages['.'].linked = [...new Set(selectedLabels)]
-
-  return result
+  const scopedLabels = await listArtifacts('.ai', providers)
+  const labels = selectedLabels
+    ? [...selectedLabels]
+    : scopedLabels
+  return reconcilePackageLinks(aiJson, '.', providers, labels, scopedLabels)
 }
 
 export async function linkProviders(
@@ -163,16 +236,14 @@ export async function linkProviders(
   packageKey = '.',
 ): Promise<LinkResult> {
   const aiJson = await readAiJson()
-  const labels = artifactLabels ?? await listArtifacts('.ai', providers)
+  const scopedLabels = await listArtifacts('.ai', providers)
+  const labels = artifactLabels ?? scopedLabels
 
   if (packageKey === '.') {
     aiJson.packages['.'] ??= { version: '*', linked: [] }
   }
-  if (aiJson.packages[packageKey]) {
-    aiJson.packages[packageKey].linked = [...new Set(labels)]
-  }
 
-  const result = await linkPackageArtifacts(providers, labels)
+  const result = await reconcilePackageLinks(aiJson, packageKey, providers, labels, scopedLabels)
   await writeAiJson(aiJson)
   return result
 }
