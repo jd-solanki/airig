@@ -1,0 +1,3 @@
+# `link` reconciles and `remove` uninstalls
+
+`link` is responsible for changing which downloaded AI Setup artifacts are active in provider target paths: checked artifacts are linked and newly unchecked artifacts have only their target symlinks removed. `remove owner/repo` is non-interactive and removes the entire installed Setup Release, including its downloaded files from `.ai/` and its owned links. `remove .` unlinks all local AI Setup artifacts and removes the local manifest entry, but leaves `.ai/` source files untouched because they are the Author's working setup. This keeps command intent simple: `link` changes active wiring, while `remove` stops using an installed setup entry entirely.

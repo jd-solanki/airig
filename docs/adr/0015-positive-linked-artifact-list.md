@@ -1,0 +1,3 @@
+# Store linked artifacts as a positive list
+
+`ai.json` records a positive `linked` list for each installed Setup Release instead of a negative `exclude` list. The local `"."` package uses the same `linked` list shape, with `version: "*"` as its only special case. The list stores source artifact labels, such as `AGENTS.md`, `skills/tdd`, and `.claude/agents/reviewer.md`; the Provider Registry is responsible for resolving those artifacts into target symlink paths. `add` and `update` manage downloaded Setup Release content in `.ai/`, while `link` owns which downloaded artifacts are active in provider target paths. A positive list matches that model: updates can download newly-added upstream artifacts without linking them, and the user's active wiring remains explicit.

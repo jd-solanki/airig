@@ -6,17 +6,33 @@
 
 ## Core Insight
 
-The author is the first consumer of their own setup. Authors place their AI setup in `.ai/`, run `npx ohmyai link` to wire it up in their own repo, then cut a GitHub release to share it. Consumers install it with one command and stay current via explicit version bumps.
+Authors dogfood their own setup before sharing it. They place their AI setup in `.ai/`, run `npx ohmyai link` to wire it up in their own repo, then cut a GitHub release to share it. Users install it with one command and stay current via explicit version bumps.
 
 ---
 
 ## Glossary
 
+### Author
+The person or organization that creates an AI Setup and publishes it as a Setup Release.
+_Avoid_: Setup owner, publisher
+
+### User
+The person who downloads an Author's Setup Release and uses it in their own repository.
+_Avoid_: Consumer, installer
+
 ### AI Setup
-The complete collection of AI configuration artifacts for one or more providers — skills, agents, custom commands, hooks. Stored in the `.ai/` directory and distributed as a Setup Release when published.
+The complete collection of AI configuration artifacts for one or more providers — project instruction files, skills, agents, custom commands, hooks. Stored in the `.ai/` directory and distributed as a Setup Release when published.
+
+### Project Instruction File
+A root-level AI Setup artifact that coding agents and IDEs read to understand how to work in a repository. `AGENTS.md` is the broadly supported filename; `CLAUDE.md` is the Claude-recognized filename and may either share the same guidance or carry Claude-specific guidance.
+_Avoid_: Cloud.md
+
+### Instruction Target
+A provider-recognized root filename where a Project Instruction File is exposed in the user repository. Multiple Instruction Targets can expose shared or provider-specific guidance to different coding agents.
+_Avoid_: Provider instruction, duplicate instruction file
 
 ### Package
-The public npm CLI package that provides the `ohmyai` command. Published to npm so users can run `npx ohmyai`.
+The public npm CLI package named `ohmyai` that provides the `ohmyai` command. Published to npm so users can run `npx ohmyai`.
 
 ### Setup Release
 A versioned AI Setup published by an author on GitHub. Identified as `<owner>/<repo>` (e.g. `yourname/setup`). Distributed via GitHub immutable releases as an `ai.zip` asset.
@@ -29,6 +45,8 @@ The committed directory at the repo root that holds project-scoped AI Setup cont
 ```
 .ai/
   ai.json
+  AGENTS.md        ← root Project Instruction File
+  CLAUDE.md        ← root Project Instruction File
   skills/          ← provider-agnostic; linked to .agents/skills/ per-file
   .claude/
     agents/
@@ -37,74 +55,55 @@ The committed directory at the repo root that holds project-scoped AI Setup cont
     agents/
     commands/      ← linked to .codex/prompts/
 ```
-Committed to git. Consumers can edit files freely — git is the diff/merge tool.
-
-### `.ai.global/` Directory
-The directory at the repo root that holds global-scoped AI Setup content — artifacts that apply across all of the author's projects. Same internal structure as `.ai/` (organized by provider). When published, both `.ai/` and `.ai.global/` are included in `ai.zip`. When a consumer installs with global scope, `.ai.global/<provider>/` content lands in `~/.ai/<provider>/`.
-```
-.ai.global/
-  .claude/
-    skills/
-    agents/
-  .codex/
-    agents/
-```
+Committed to git. Users can edit files freely — git is the diff/merge tool.
 
 ### `ai.json`
-The single manifest file for an installation scope. Lives at `.ai/ai.json` (project scope) or `~/.ai/ai.json` (global scope). Declares which Setup Releases are installed at which exact versions, which artifacts are excluded, and records the symlink ownership map. Ownership keys are symlink target paths. Values are either `"owner/repo@version"` (Setup Release-managed) or a `.ai/`-relative source path (locally-managed, written by `link`).
+The single manifest file for project scope. Lives at `.ai/ai.json`. Declares which Setup Releases are downloaded at which exact versions and which downloaded artifacts are linked. Active ownership is derived from each package's `linked` list and the Provider Registry instead of being stored as a separate map.
 
 ```json
 {
   "packages": {
     ".": {
       "version": "*",
-      "exclude": [".claude/commands/scratch.md"]
+      "linked": [".claude/commands/review.md"]
     },
     "yourname/setup": {
       "version": "1.2.0",
-      "exclude": ["skills/python-pro.md", ".claude/agents/"]
+      "linked": ["AGENTS.md", "skills/tdd", ".claude/agents/reviewer.md"]
     }
-  },
-  "ownership": {
-    ".claude/agents/reviewer.md": ".ai/.claude/agents/reviewer.md",
-    ".agents/skills/tdd/SKILL.md": "yourname/setup@1.2.0",
-    ".codex/agents/reviewer.md": ".ai/.codex/agents/reviewer.md"
   }
 }
 ```
 
-Manifest keys are either `"owner/repo"` (remote Setup Release) or `"."` (local AI Setup — the author's own `.ai/` directory, written by `link`). The `"."` key uses `version: "*"` as a sentinel meaning "always current, no pinning." Its `exclude` list enables selective linking — specific files or dirs the author wants to skip.
+Manifest keys are either `"owner/repo"` (remote Setup Release) or `"."` (local AI Setup — the author's own `.ai/` directory, written by `link`). The `"."` key uses `version: "*"` as a sentinel meaning "always current, no pinning." Both local and remote entries use the same `linked` list of source artifact labels — `.ai/`-relative artifacts that should be wired into provider target paths.
 
 **Versions are always exact** for remote Setup Releases — no semver ranges. The CLI pins the exact version on `add` and only moves it on an explicit `update` command. `"*"` is only valid for the `"."` local AI Setup.
 
-Immutability is always verified online via the GitHub API — on every `add`, `update`, and `sync`. No offline attestation cache.
+Immutability is always verified online via the GitHub API — on every `add` and `update`. No offline attestation cache.
 
-The `ownership` section is written and owned by the CLI — consumers never edit it manually. Values are either `"owner/repo@version"` (remote Setup Release) or an explicit `.ai/`-relative source path (local AI Setup, written by `link`). It records which Setup Release or local AI Setup owns each symlinked file for conflict detection.
-
-The `exclude` list is written by the CLI after interactive selection during `add` (remote Setup Releases) or respected during `link` (local AI Setup). Directory paths exclude everything under them.
+The `linked` list is written by the CLI after interactive selection during `link`. `add` downloads Setup Release content into `.ai/`, creates or updates the local `.ai/ai.json` entry for the downloaded Setup Release with an initially empty `linked` list, then invokes `link` to decide which downloaded artifacts are wired.
 
 ### Interactive Selection
-The CLI prompt shown during `npx ohmyai add` that lets consumers pick which artifact subdirectories and individual files to install. Deselected items are written to the `exclude` list in `ai.json`. Consumers never edit the exclude list manually — the CLI owns it.
+The CLI prompt that lets users pick which artifact subdirectories and individual files to keep linked. Selected items are written to the `linked` list in `ai.json`. Users never edit the linked list manually — the CLI owns it.
 
 ### Command Interaction Model
-`add` is interactive — triggers the Interactive Selection prompt so consumers choose which artifacts to install. `remove` is interactive — shows a checkbox of all currently-installed artifacts pre-checked; selecting a subset removes only those and adds them to the `exclude` list (local-only, no re-download needed); selecting all does a full uninstall and removes the Setup Release entry entirely. `update` is explicit — requires a version argument, never auto-resolves, never prompts. `check` is unattended-safe — read-only, prints available newer immutable releases, safe in CI.
-
-### Update Warnings
-Informational messages printed during `npx ohmyai check` for excluded artifacts that have changed upstream:
-- **Excluded file updated**: Author modified a file in the consumer's exclude list — ignored, warning shown.
-- **Excluded file deleted**: Author removed a file that exists in the consumer's exclude list — consumer prompted to decide (remove the exclusion entry or keep the local file).
+`add` downloads all artifacts from a Setup Release into `.ai/`, writes the local manifest entry, then automatically invokes `link` so users choose which downloaded artifacts to keep wired. If that Setup Release is already downloaded, `add` errors and points the user to `link`, `update`, or `remove`. When a command needs both provider and artifact choices, provider selection comes first and artifact selection comes second. `link` is interactive when needed — checked artifacts are kept linked, newly checked artifacts are linked, and newly unchecked artifacts have only their target symlinks removed. `remove` is non-interactive and removes an entire installed Setup Release, including its downloaded files from `.ai/` and its owned links. `remove .` unlinks all local AI Setup artifacts and removes the `"."` manifest entry, but leaves `.ai/` source files untouched. `update` is explicit — requires a version argument, refreshes downloaded content, reconciles symlinks for artifacts still in the user's `linked` list, removes deleted upstream artifacts from `linked`, does not link newly-added upstream artifacts, never auto-resolves, and never prompts.
 
 ### Release Asset
-The `ai.zip` file that authors upload to a GitHub immutable release. Contains the `.ai/` directory. The CLI always looks for an asset named exactly `ai.zip` on the resolved release tag. Only immutable releases are accepted by the CLI — non-immutable releases are rejected at install time.
+The `ai.zip` file that authors upload to a GitHub immutable release. Contains AI Setup artifacts from `.ai/`, but excludes `.ai/ai.json` because the manifest is local installation state. The CLI always looks for an asset named exactly `ai.zip` on the resolved release tag. Only immutable releases are accepted by the CLI — non-immutable releases are rejected at install time.
 
 ### Link
-The act of symlinking individual files from `.ai/<provider_directory>/` (and `.ai/skills/` for shared skills) into the provider's real config directories. Each managed file gets its own symlink, preserving any unmanaged files the author has in the same target directories. Run via `npx ohmyai link [provider]` — if no provider is given, a multi-select prompt lets the user pick one or more providers to wire. After creating each symlink, writes a locally-managed ownership entry to `ai.json` (value = `.ai/`-relative source path) so `remove` can clean up those symlinks later. No network, no release verification. Skills (`.ai/skills/`) are always linked regardless of which providers are selected. Also triggered automatically at the end of `add`.
+The act of reconciling which downloaded AI Setup artifacts are symlinked into provider target paths. Each managed file gets its own symlink, preserving any unmanaged files in the same target directories. Run via `npx ohmyai link [provider]` — if no provider is given, a multi-select prompt lets the user pick one or more providers to wire, then choose which artifacts stay linked. Checked artifacts are linked, newly checked artifacts are linked, and newly unchecked artifacts have only their target symlinks removed; the source files remain in `.ai/`. No network, no release verification. Skills (`.ai/skills/`) are always considered regardless of which providers are selected. Also triggered automatically at the end of `add`.
+
+### Link Conflict
+A target path that cannot be linked because it is already claimed or occupied. Conflicts between remote Setup Releases block the operation before files are written; locally-managed links can be taken over by a remote Setup Release with a warning. Existing real files or symlinks pointing somewhere else are skipped rather than overwritten.
+_Avoid_: Overwrite, last-write-wins
 
 ### Provider Registry
-A static mapping built into the CLI (`src/lib/provider-registry.ts`) that declares, for each supported provider: its canonical name and its per-file symlink rules (source path → target path). MVP providers: `claude` and `codex`. Adding a new provider requires a CLI release.
+A static mapping built into the CLI (`src/lib/provider-registry.ts`) that declares, for each supported provider: its canonical name and its symlink rules (source path → target path). File sources map to file targets, directory sources map to directory targets, and root Project Instruction Files are represented as normal provider rules. MVP providers: `claude` and `codex`. Adding a new provider requires a CLI release.
 
 ### Install Summary
-The log printed after `add` or `update` showing which files were added, replaced, or deleted — and why. Consumers use this alongside `git diff` to understand what changed.
+The log printed after `add` or `update` showing which files were added, replaced, or deleted — and why. Users use this alongside `git diff` to understand what changed.
 
 ### Immutability Gate
 The security check run on every `add` and `update` before any files are written. The CLI fetches the release attestation from GitHub and verifies the release is immutable. If the release has no attestation or is not immutable, the command errors and nothing is written to disk.
@@ -117,7 +116,7 @@ The security check run on every `add` and `update` before any files are written.
 - `npx ohmyai add yourname/setup` resolves to the latest immutable release and pins that exact version
 - `npx ohmyai add yourname/setup@1.2.0` installs that specific immutable release
 - `npx ohmyai update yourname/setup@1.3.0` bumps to that explicit immutable release
-- No automatic version resolution — every version transition is a deliberate consumer decision
+- No automatic version resolution — every version transition is a deliberate user decision
 
 ---
 
@@ -126,17 +125,12 @@ The security check run on every `add` and `update` before any files are written.
 Running `npx ohmyai update yourname/setup@<version>`:
 - Verifies the target release is immutable (errors if not)
 - Replaces files that exist in the new release
-- Adds files new to the release
-- Deletes files removed from the release
-- Preserves files in `.ai/` that are not part of the Setup Release (consumer-added files)
+- Downloads files new to the release into `.ai/` without linking them
+- Deletes files removed from the release, removes their target symlinks if linked, and prunes them from the package's `linked` list
+- Preserves files in `.ai/` that are not part of the Setup Release (user-added files)
+- Reconciles symlinks for artifacts that remain in the package's `linked` list
 - Prints a full install summary before writing anything
-- Consumer uses `git diff` to review and recover any customizations
-
-Running `npx ohmyai check [owner/repo]`:
-- Read-only, never writes files
-- Fetches available newer immutable releases for installed Setup Releases
-- Reports which Setup Releases have updates available
-- Safe to run in CI
+- User uses `git diff` to review and recover any customizations
 
 ---
 
@@ -144,10 +138,8 @@ Running `npx ohmyai check [owner/repo]`:
 
 ```
 npx ohmyai add <owner/repo>[@version]    # fetch ai.zip from immutable GitHub release, write to .ai/, update ai.json
-npx ohmyai check [owner/repo]            # report newer immutable releases available, read-only
 npx ohmyai update <owner/repo>@<version> # pull specific immutable release, replace/add/delete files, print summary
-npx ohmyai remove <owner/repo>           # interactive: select artifacts to remove; partial = updates exclude list, all = full uninstall
-npx ohmyai sync                          # restore .ai/ from ai.json (re-fetch pinned immutable releases, verify attestations)
+npx ohmyai remove <owner/repo>           # remove an entire installed Setup Release
 npx ohmyai link [provider]               # symlink .ai/<provider>/ subdirs → provider config dirs; omit provider for multi-select (local only)
 npx ohmyai publish                       # create draft release, attach ai.zip, publish as immutable release
 ```
@@ -164,13 +156,12 @@ npx ohmyai publish                       # create draft release, attach ai.zip, 
 4. Tag a release and run `npx ohmyai publish` to zip `.ai/` and upload as an immutable release
 5. Share `npx ohmyai add yourname/repo`
 
-## Consumer Workflow
+## User Workflow
 
 1. Run `npx ohmyai add yourname/setup` — latest immutable release written to `.ai/`, `ai.json` created with exact version; multi-select provider prompt wires chosen providers immediately
 2. Commit `.ai/`, `ai.json` to git
 3. Edit files in `.ai/` freely to customize
-4. Run `npx ohmyai check` periodically to see if newer immutable releases are available
-5. Run `npx ohmyai update yourname/setup@<version>` explicitly when ready to upgrade
+4. Run `npx ohmyai update yourname/setup@<version>` explicitly when ready to upgrade
 
 ---
 
@@ -190,8 +181,8 @@ npx ohmyai publish                       # create draft release, attach ai.zip, 
 | Versioning | Raw GitHub clone, no releases | GitHub immutable releases, exact version pinning |
 | Version mutability | Always latest HEAD, silent updates | Exact pins, explicit upgrades only |
 | Immutability enforcement | None | Immutability gate on every install — non-immutable releases rejected |
-| Conflict detection | None (last-write-wins) | `ownership` section in `ai.json`, detected at install time |
-| Manifest + lockfile | `skills-lock.json` (hash only, no version intent) | Single `ai.json` (version + attestation + ownership) |
-| Restore on fresh machine | Not supported | `npx ohmyai sync` re-fetches pinned immutable releases |
+| Conflict detection | None (last-write-wins) | Derived from package `linked` lists and the Provider Registry |
+| Manifest + lockfile | `skills-lock.json` (hash only, no version intent) | Single `ai.json` (exact versions + linked artifact lists) |
+| Restore on fresh machine | Not supported | Post-MVP |
 | Author dogfooding | Author cannot use own skills repo (bootstrapping problem) | Author runs `link` to use own setup immediately (local, no GitHub) |
 | Agents, commands, hooks | Manual copy | First-class, distributed automatically |

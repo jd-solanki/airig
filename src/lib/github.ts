@@ -2,7 +2,7 @@ import { Octokit } from '@octokit/rest'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
-// ── Consumer path (unauthenticated) ──────────────────────────────────────────
+// ── User path (unauthenticated) ──────────────────────────────────────────
 
 export interface ResolvedRelease {
   tag: string

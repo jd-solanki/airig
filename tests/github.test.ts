@@ -280,7 +280,7 @@ describe('publishRelease', () => {
   })
 })
 
-// ── Consumer path ─────────────────────────────────────────────────────────────
+// ── User path ─────────────────────────────────────────────────────────────
 
 function makeAsset(name: string, url: string) {
   return { name, browser_download_url: url }

@@ -226,7 +226,7 @@ malicious or compromised skill can:
 - Perform prompt injection to override other instructions.
 
 Because updates are always "latest HEAD" with no pinning, a compromised skill author
-can push a malicious update that propagates to all consumers on next `update`. There
+can push a malicious update that propagates to all users on next `update`. There
 is no code-signing or integrity check on skill content (signature verification is an
 open RFC — issue #617, not yet implemented).
 
