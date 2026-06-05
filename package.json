@@ -2,6 +2,7 @@
   "name": "ohmyai",
   "version": "0.0.1",
   "description": "Distribute and manage AI setups across providers",
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.19.0",
   "engines": {
