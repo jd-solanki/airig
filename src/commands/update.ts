@@ -71,7 +71,7 @@ export async function runUpdate(pkg: string): Promise<void> {
 }
 
 export const updateCommand = new Command('update')
-  .description('Update an installed immutable release at an exact version')
+  .description('Refresh an installed Setup Release at an exact immutable version')
   .argument('<package>', 'Package to update, e.g. owner/repo@1.2.0')
   .action(async (pkg: string) => {
     try {

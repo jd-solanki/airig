@@ -45,7 +45,7 @@ export async function runAdd(pkg: string): Promise<void> {
 }
 
 export const addCommand = new Command('add')
-  .description('Install an immutable release into .ai/ with linked artifact tracking')
+  .description('Download an immutable Setup Release into .ai/ and run link')
   .argument('<package>', 'Package to install, e.g. owner/repo or owner/repo@1.2.0')
   .action(async (pkg: string) => {
     try {

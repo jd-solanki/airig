@@ -54,7 +54,7 @@ export async function runRemove(pkg: string): Promise<void> {
 }
 
 export const removeCommand = new Command('remove')
-  .description('Uninstall an installed package')
+  .description('Remove an installed Setup Release or local provider links')
   .argument('<package>', 'Package to remove, e.g. owner/repo or . for the local package')
   .action(async (pkg: string) => {
     try {

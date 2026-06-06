@@ -2,6 +2,8 @@
 status: superseded by ADR-0014
 ---
 
-# `remove` supports partial artifact selection
+# `remove` is non-interactive
 
-`remove owner/repo` shows the installed artifacts as a pre-checked interactive selection, where selecting everything performs a full uninstall and selecting a subset removes only those artifacts while preserving the Setup Release entry with updated excludes. This makes trimming an install fully local and avoids a `remove` plus `add` round trip, while keeping command semantics clearer than introducing a separate `unlink` command.
+`remove owner/repo` now removes an entire installed Setup Release without prompting: downloaded source artifacts owned by the package are deleted from `.ai/`, target symlinks derived from its `linked` list are removed, and the package entry is removed from `ai.json`.
+
+`remove .` is the local Author workflow: it removes target symlinks and the local manifest entry while preserving `.ai/` source files. This ADR is superseded by ADR-0014; the old partial-selection model and exclude-list manifest are out of the MVP command model.

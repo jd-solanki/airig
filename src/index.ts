@@ -7,7 +7,7 @@ import { removeCommand } from './commands/remove.js'
 import { updateCommand } from './commands/update.js'
 
 const program = new Command('ohmyai')
-  .description('Distribute and manage AI setups across providers')
+  .description('Manage project-scoped AI Setup releases and local provider links')
 
 program.addCommand(linkCommand)
 program.addCommand(publishCommand)

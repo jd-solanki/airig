@@ -45,7 +45,7 @@ export function createPublishZip(zipPath = path.join(process.cwd(), 'ai.zip')): 
 }
 
 export const publishCommand = new Command('publish')
-  .description('Create an immutable GitHub release with ai.zip')
+  .description('Publish project .ai artifacts as an immutable ai.zip release')
   .argument('[tag]', 'Git tag to release (defaults to latest local tag)')
   .action(async (tagArg: string | undefined) => {
     const token = process.env.GITHUB_TOKEN

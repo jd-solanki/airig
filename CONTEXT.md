@@ -89,6 +89,8 @@ The CLI prompt that lets users pick which artifact subdirectories and individual
 ### Command Interaction Model
 `add` downloads all artifacts from a Setup Release into `.ai/`, writes the local manifest entry, then automatically invokes `link` so users choose which downloaded artifacts to keep wired. If that Setup Release is already downloaded, `add` errors and points the user to `link`, `update`, or `remove`. When a command needs both provider and artifact choices, provider selection comes first and artifact selection comes second. `link` is interactive when needed — checked artifacts are kept linked, newly checked artifacts are linked, and newly unchecked artifacts have only their target symlinks removed. `remove` is non-interactive and removes an entire installed Setup Release, including its downloaded files from `.ai/` and its owned links. `remove .` unlinks all local AI Setup artifacts and removes the `"."` manifest entry, but leaves `.ai/` source files untouched. `update` is explicit — requires a version argument, refreshes downloaded content, reconciles symlinks for artifacts still in the user's `linked` list, removes deleted upstream artifacts from `linked`, does not link newly-added upstream artifacts, never auto-resolves, and never prompts.
 
+There is no global-scope behavior in the MVP. The command surface is limited to `add`, `link`, `update`, `remove`, and `publish`; `check`, `sync`, and `list` are out of scope.
+
 ### Release Asset
 The `ai.zip` file that authors upload to a GitHub immutable release. Contains AI Setup artifacts from `.ai/`, but excludes `.ai/ai.json` because the manifest is local installation state. The CLI always looks for an asset named exactly `ai.zip` on the resolved release tag. Only immutable releases are accepted by the CLI — non-immutable releases are rejected at install time.
 
@@ -129,7 +131,7 @@ Running `npx ohmyai update yourname/setup@<version>`:
 - Deletes files removed from the release, removes their target symlinks if linked, and prunes them from the package's `linked` list
 - Preserves files in `.ai/` that are not part of the Setup Release (user-added files)
 - Reconciles symlinks for artifacts that remain in the package's `linked` list
-- Prints a full install summary before writing anything
+- Prints an update summary after reconciliation
 - User uses `git diff` to review and recover any customizations
 
 ---
@@ -137,14 +139,14 @@ Running `npx ohmyai update yourname/setup@<version>`:
 ## v1 Command Surface
 
 ```
-npx ohmyai add <owner/repo>[@version]    # fetch ai.zip from immutable GitHub release, write to .ai/, update ai.json
-npx ohmyai update <owner/repo>@<version> # pull specific immutable release, replace/add/delete files, print summary
-npx ohmyai remove <owner/repo>           # remove an entire installed Setup Release
-npx ohmyai link [provider]               # symlink .ai/<provider>/ subdirs → provider config dirs; omit provider for multi-select (local only)
-npx ohmyai publish                       # create draft release, attach ai.zip, publish as immutable release
+npx ohmyai add <owner/repo>[@version]    # download immutable ai.zip into .ai/, create ai.json entry, then run link
+npx ohmyai link [provider]               # reconcile selected .ai artifacts into provider target paths
+npx ohmyai update <owner/repo>@<version> # refresh downloaded content at an exact immutable version
+npx ohmyai remove <owner/repo|.>         # remove a Setup Release, or unlink local "." while preserving .ai sources
+npx ohmyai publish [tag]                 # publish project .ai artifacts as immutable ai.zip
 ```
 
-`list` is post-MVP.
+`check`, `sync`, `list`, and global scope are post-MVP.
 
 ---
 

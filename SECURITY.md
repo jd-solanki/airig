@@ -4,7 +4,7 @@
 
 ## Threat Model
 
-AI setup files (skills, agents, commands) are Markdown instructions that AI coding agents execute with real tools — `Bash`, `Read`, `Write`, `WebFetch`. A malicious or compromised setup file is not inert text; it is a command channel into those tools running inside a developer's machine.
+AI setup files (Project Instruction Files, skills, agents, commands) are Markdown instructions that AI coding agents execute with real tools — `Bash`, `Read`, `Write`, `WebFetch`. A malicious or compromised setup file is not inert text; it is a command channel into those tools running inside a developer's machine.
 
 ### Attack vectors
 
@@ -72,7 +72,7 @@ Every installed Setup Release is pinned to an exact version in `ai.json`:
   "packages": {
     "yourname/setup": {
       "version": "1.2.0",
-      "attestation": "sha256:abc123..."
+      "linked": ["AGENTS.md", "skills/tdd"]
     }
   }
 }
@@ -116,7 +116,7 @@ Immutability guarantees the bits don't change after publication — it does not 
 If an attacker controls the author's GitHub account before the release is published, they can publish a malicious immutable release. The immutability gate will accept it because the attestation will be valid. Exact pinning limits the blast radius to users who explicitly upgrade to that version.
 
 **Broad `allowed-tools` declarations**
-ohmyai does not currently validate or restrict `allowed-tools` declarations in skill files. Users should audit tool permissions during Interactive Selection on `add`.
+ohmyai does not currently validate or restrict `allowed-tools` declarations in skill files. Users should audit tool permissions when reviewing downloaded setup content.
 
 ---
 

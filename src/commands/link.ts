@@ -17,7 +17,7 @@ const SKIP_REASON_TEXT: Record<SkipReason, string> = {
 }
 
 export const linkCommand = new Command('link')
-  .description('Symlink .ai/ files into provider config directories')
+  .description('Reconcile downloaded .ai artifacts into provider target paths')
   .argument('[provider]', 'Provider to link: claude | codex')
   .option('--single-line-summary', 'Print a single summary line instead of grouped output')
   .action(async (provider: string | undefined, opts: { singleLineSummary?: boolean }) => {
