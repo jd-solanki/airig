@@ -1,15 +1,13 @@
 import { Command } from 'commander'
-import { checkbox } from '@inquirer/prompts'
-import { mkdtemp, rm, mkdir, writeFile, cp, readdir, lstat, copyFile } from 'node:fs/promises'
+import { mkdtemp, rm, mkdir, writeFile, cp, readdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { Octokit } from '@octokit/rest'
 import extractZip from 'extract-zip'
-import { PROVIDER_REGISTRY, listArtifacts, targetPathsForArtifact } from '../lib/provider-registry.js'
-import { deriveTargetOwnership, linkPackageArtifacts } from '../lib/linker.js'
 import { readAiJson, writeAiJson, addPackage, type PackageEntry } from '../lib/ai-json.js'
 import { fetchReleaseInfo, downloadAsset } from '../lib/github.js'
+import { runLink } from './link.js'
 
 function parsePackageRef(pkg: string): { owner: string; repo: string; tag: string | undefined } {
   const atIdx = pkg.lastIndexOf('@')
@@ -82,23 +80,29 @@ async function flattenSkills(skillsDir: string): Promise<void> {
   }
 }
 
-// Copy selected artifacts from the temp extracted dir into .ai/
-async function copyArtifactsToAi(extractedAiDir: string, artifacts: string[]): Promise<void> {
-  for (const artifact of artifacts) {
-    const src = path.join(extractedAiDir, artifact)
-    const dest = path.join('.ai', artifact)
-    await mkdir(path.dirname(dest), { recursive: true })
-    const stat = await lstat(src)
-    if (stat.isDirectory()) {
-      await cp(src, dest, { recursive: true })
-    } else {
-      await copyFile(src, dest)
-    }
+async function copyReleaseAiToLocal(extractedAiDir: string): Promise<void> {
+  await mkdir('.ai', { recursive: true })
+  const entries = await readdir(extractedAiDir, { withFileTypes: true })
+  for (const entry of entries) {
+    await cp(
+      path.join(extractedAiDir, entry.name),
+      path.join('.ai', entry.name),
+      { recursive: true, force: true, verbatimSymlinks: true },
+    )
   }
 }
 
-async function runAdd(pkg: string): Promise<void> {
+export async function runAdd(pkg: string): Promise<void> {
   const { owner, repo, tag: inputTag } = parsePackageRef(pkg)
+  const packageKey = `${owner}/${repo}`
+  const aiJson = await readAiJson()
+
+  if (aiJson.packages[packageKey]) {
+    throw new Error(
+      `${packageKey} is already downloaded.\n` +
+      '  Use ohmyai link to change active artifacts, ohmyai update to change versions, or ohmyai remove first.',
+    )
+  }
 
   const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN })
 
@@ -133,98 +137,14 @@ async function runAdd(pkg: string): Promise<void> {
       await flattenSkills(skillsSrc)
     }
 
-    const allArtifacts = await listArtifacts(extractedAiDir)
-    if (allArtifacts.length === 0) {
-      console.log('Nothing to install — the package contains no installable artifacts.')
-      return
-    }
+    await copyReleaseAiToLocal(extractedAiDir)
 
-    const selectedArtifacts = await checkbox({
-      message: 'Select artifacts to install:',
-      choices: allArtifacts.map(a => ({ value: a, name: a, checked: true })),
-    })
-    if (selectedArtifacts.length === 0) {
-      console.log('No artifacts selected. Nothing installed.')
-      return
-    }
-
-    const unlinkedArtifacts = allArtifacts.filter(a => !selectedArtifacts.includes(a))
-
-    const selectedProviders = await checkbox({
-      message: 'Select providers to wire:',
-      choices: Object.keys(PROVIDER_REGISTRY).map(p => ({ value: p, name: p })),
-    })
-
-    const ownershipValue = `${owner}/${repo}@${resolvedTag}`
-    const aiJson = await readAiJson()
-    const packageKey = `${owner}/${repo}`
-    if (aiJson.packages[packageKey]) {
-      throw new Error(
-        `${packageKey} is already downloaded.\n` +
-        '  Use ohmyai link to change active artifacts, ohmyai update to change versions, or ohmyai remove first.',
-      )
-    }
-
-    const ownership = deriveTargetOwnership(aiJson)
-    const packageConflicts: string[] = []
-    const localOverrides: string[] = []
-    const localOverrideArtifacts = new Set<string>()
-
-    for (const artifact of selectedArtifacts) {
-      for (const target of targetPathsForArtifact(artifact, selectedProviders)) {
-        const existingOwners = ownership.get(target) ?? []
-        for (const existing of existingOwners) {
-          if (existing.packageKey === '.') {
-            localOverrides.push(target)
-            localOverrideArtifacts.add(existing.artifact)
-          } else {
-            packageConflicts.push(`  ${target}  (owned by ${existing.packageKey}@${existing.version})`)
-          }
-        }
-      }
-    }
-
-    if (packageConflicts.length > 0) {
-      throw new Error(
-        `Conflicts detected — the following symlinks are already owned by another package:\n` +
-        packageConflicts.join('\n') + '\n' +
-        '  Remove the conflicting package first with: ohmyai remove <owner/repo>',
-      )
-    }
-
-    for (const target of localOverrides) {
-      console.warn(`  ⚠ ${target} was locally-managed, now owned by ${ownershipValue}`)
-    }
-
-    await copyArtifactsToAi(extractedAiDir, selectedArtifacts)
-
-    const linkResult = await linkPackageArtifacts(selectedProviders, selectedArtifacts)
-    if (localOverrideArtifacts.size > 0 && aiJson.packages['.']) {
-      aiJson.packages['.'].linked = aiJson.packages['.'].linked
-        .filter(artifact => !localOverrideArtifacts.has(artifact))
-    }
-
-    const entry: PackageEntry = { version: resolvedTag, linked: selectedArtifacts }
+    const entry: PackageEntry = { version: resolvedTag, linked: [] }
     addPackage(aiJson, packageKey, entry)
     await writeAiJson(aiJson)
 
-    console.log(`\nInstalled ${owner}/${repo}@${resolvedTag}`)
-    if (linkResult.linked.length > 0) {
-      console.log(`\nLinked (${linkResult.linked.length}):`)
-      for (const p of linkResult.linked) console.log(`  ✔ ${p}`)
-    }
-    if (unlinkedArtifacts.length > 0) {
-      console.log(`\nNot linked (${unlinkedArtifacts.length}):`)
-      for (const e of unlinkedArtifacts) console.log(`  ○ ${e}`)
-    }
-    if (localOverrides.length > 0) {
-      console.log(`\nLocally-managed entries overwritten (${localOverrides.length}):`)
-      for (const o of localOverrides) console.log(`  ⚠ ${o}`)
-    }
-    if (linkResult.skipped.length > 0) {
-      console.log(`\nLink conflicts skipped (${linkResult.skipped.length}):`)
-      for (const s of linkResult.skipped) console.log(`  ⚠ ${s.path}`)
-    }
+    console.log(`\nDownloaded ${owner}/${repo}@${resolvedTag}`)
+    await runLink(undefined, { packageKey })
   } finally {
     await rm(tmpDir, { recursive: true, force: true })
   }
