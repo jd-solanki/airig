@@ -4,6 +4,7 @@ import { linkCommand } from './commands/link.js'
 import { publishCommand } from './commands/publish.js'
 import { addCommand } from './commands/add.js'
 import { removeCommand } from './commands/remove.js'
+import { updateCommand } from './commands/update.js'
 
 const program = new Command('ohmyai')
   .description('Distribute and manage AI setups across providers')
@@ -11,6 +12,7 @@ const program = new Command('ohmyai')
 program.addCommand(linkCommand)
 program.addCommand(publishCommand)
 program.addCommand(addCommand)
+program.addCommand(updateCommand)
 program.addCommand(removeCommand)
 
 program.parse()
