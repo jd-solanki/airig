@@ -1,7 +1,8 @@
 import { Command } from 'commander'
 import { execSync } from 'node:child_process'
-import { rm } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
+import { parseEnv } from 'node:util'
 import { create as createZip } from '../lib/zip.js'
 import { createOctokit, getImmutableReleasesStatus, publishRelease } from '../lib/github.js'
 
@@ -44,21 +45,39 @@ export function createPublishZip(zipPath = path.join(process.cwd(), 'ai.zip')): 
   return createZip('.ai', zipPath)
 }
 
+function isNodeErrorWithCode(err: unknown, code: string): boolean {
+  return err instanceof Error && 'code' in err && err.code === code
+}
+
+export async function loadPublishGithubTokenFromCwd(): Promise<string | undefined> {
+  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN
+
+  try {
+    const envFile = await readFile(path.join(process.cwd(), '.env'), 'utf8')
+    const token = parseEnv(envFile).GITHUB_TOKEN
+    if (token) process.env.GITHUB_TOKEN = token
+    return token
+  } catch (err) {
+    if (isNodeErrorWithCode(err, 'ENOENT')) return undefined
+    throw err
+  }
+}
+
 export const publishCommand = new Command('publish')
   .description('Publish project .ai artifacts as an immutable ai.zip release')
   .argument('[tag]', 'Git tag to release (defaults to latest local tag)')
   .action(async (tagArg: string | undefined) => {
-    const token = process.env.GITHUB_TOKEN
-    if (!token) {
-      console.error('✖ GITHUB_TOKEN is not set. Export it before running publish.')
-      console.error('  export GITHUB_TOKEN=ghp_...')
-      process.exit(1)
-    }
-
-    const tag = resolveTag(tagArg)
-    const { owner, repo } = resolveOwnerRepo()
-
     try {
+      const token = await loadPublishGithubTokenFromCwd()
+      if (!token) {
+        console.error('✖ GITHUB_TOKEN is not set. Add it to .env in this directory or export it before running publish.')
+        console.error('  GITHUB_TOKEN=ghp_...')
+        process.exit(1)
+      }
+
+      const tag = resolveTag(tagArg)
+      const { owner, repo } = resolveOwnerRepo()
+
       const octokit = createOctokit(token)
 
       const immutable = await getImmutableReleasesStatus(owner, repo, octokit)

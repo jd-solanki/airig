@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import extractZip from 'extract-zip'
-import { createPublishZip, parseRemoteUrl } from '../src/commands/publish.js'
+import { createPublishZip, loadPublishGithubTokenFromCwd, parseRemoteUrl } from '../src/commands/publish.js'
 
 describe('parseRemoteUrl', () => {
   it('parses standard HTTPS remote', () => {
@@ -65,6 +65,54 @@ describe('createPublishZip', () => {
       expect(await readlink(claudePath)).toBe('AGENTS.md')
     } finally {
       process.chdir(originalCwd)
+      await rm(tmpDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('loadPublishGithubTokenFromCwd', () => {
+  it('loads GITHUB_TOKEN from .env in the current working directory', async () => {
+    const originalCwd = process.cwd()
+    const originalToken = process.env.GITHUB_TOKEN
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-publish-env-test-'))
+
+    try {
+      process.chdir(tmpDir)
+      delete process.env.GITHUB_TOKEN
+      await writeFile('.env', 'GITHUB_TOKEN=ghp_from_file\n')
+
+      await expect(loadPublishGithubTokenFromCwd()).resolves.toBe('ghp_from_file')
+      expect(process.env.GITHUB_TOKEN).toBe('ghp_from_file')
+    } finally {
+      process.chdir(originalCwd)
+      if (originalToken === undefined) {
+        delete process.env.GITHUB_TOKEN
+      } else {
+        process.env.GITHUB_TOKEN = originalToken
+      }
+      await rm(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps an exported GITHUB_TOKEN ahead of .env', async () => {
+    const originalCwd = process.cwd()
+    const originalToken = process.env.GITHUB_TOKEN
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-publish-env-test-'))
+
+    try {
+      process.chdir(tmpDir)
+      process.env.GITHUB_TOKEN = 'ghp_exported'
+      await writeFile('.env', 'GITHUB_TOKEN=ghp_from_file\n')
+
+      await expect(loadPublishGithubTokenFromCwd()).resolves.toBe('ghp_exported')
+      expect(process.env.GITHUB_TOKEN).toBe('ghp_exported')
+    } finally {
+      process.chdir(originalCwd)
+      if (originalToken === undefined) {
+        delete process.env.GITHUB_TOKEN
+      } else {
+        process.env.GITHUB_TOKEN = originalToken
+      }
       await rm(tmpDir, { recursive: true, force: true })
     }
   })

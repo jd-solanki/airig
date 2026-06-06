@@ -25,7 +25,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
     rules: [
       { source: '.ai/AGENTS.md', target: 'AGENTS.md' },
       { source: '.ai/.codex/agents', target: '.codex/agents' },
-      { source: '.ai/.codex/commands', target: '.codex/prompts' },
+      // { source: '.ai/.codex/prompts', target: '.codex/prompts' }, // Not sure if codex properly support a "prompts" directory
     ],
   },
 }
