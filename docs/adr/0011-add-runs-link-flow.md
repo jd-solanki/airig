@@ -1,3 +1,9 @@
-# `add` runs the `link` flow
+# `add` owns interactive activation
 
-After downloading all Setup Release artifacts into `.ai/`, `add` runs the `link` flow so the user can choose which downloaded artifacts are wired in the same command invocation. Users who add a Setup Release usually want their AI tool to see it immediately, and making first use one interaction avoids a forgotten follow-up command. If the Setup Release is already downloaded, `add` errors and points the user to `link`, `update`, or `remove`; the responsibilities stay separate: `add` manages first-time downloaded content, while `link` manages active symlinks.
+`add` is the public command for making AI Setup artifacts active. It does not download a full remote Setup Release into `.ai/` and then delegate to a public `link` command. Instead, remote `add` verifies immutability, extracts the release into temporary storage, asks for providers first and artifacts second, checks conflicts, then writes only selected active artifacts into `.ai/` and creates target symlinks.
+
+If a Setup Release is already installed, `add owner/repo` fetches the currently pinned version and lets the User add more artifacts from that version. `add owner/repo@new-version` errors and points to `update`, because version movement must remain explicit.
+
+`add .` is the local Author dogfooding flow. It has no network or release verification step; it prompts over existing `.ai/` artifacts and wires selected local artifacts.
+
+Why: `.ai/` is active setup source, not a hidden downloaded cache. Keeping selection and activation inside `add` gives Users one obvious command while preserving locality: no command writes remote source files unless the selected artifacts can also be linked.

@@ -60,18 +60,23 @@ describe('remote package (owner/repo)', () => {
     })
   }
 
-  it('fully removes all symlinks, .ai/ files, and package entry without prompting', async () => {
+  it('removes selected remote symlinks and .ai source files', async () => {
     await setupRemote()
+    vi.mocked(checkbox).mockResolvedValue([
+      { packageKey: 'owner/repo', artifact: 'skills/tdd' },
+    ])
 
     await runRemove('owner/repo')
 
-    expect(checkbox).not.toHaveBeenCalled()
     expect(existsSync('.agents/skills/tdd')).toBe(false)
-    expect(existsSync('.agents/skills/coding')).toBe(false)
+    expect(existsSync('.agents/skills/coding')).toBe(true)
     expect(existsSync('.ai/skills/tdd')).toBe(false)
-    expect(existsSync('.ai/skills/coding')).toBe(false)
+    expect(existsSync('.ai/skills/coding')).toBe(true)
     const aiJson = await readAiJson()
-    expect(aiJson.packages['owner/repo']).toBeUndefined()
+    expect(aiJson.packages['owner/repo']).toEqual({
+      version: '1.0.0',
+      linked: ['skills/coding'],
+    })
     expect(aiJson).not.toHaveProperty('ownership')
   })
 
@@ -92,12 +97,16 @@ describe('remote package (owner/repo)', () => {
         'owner/repo': { version: '1.0.0', linked: ['.codex/commands/foo.md'] },
       },
     })
+    vi.mocked(checkbox).mockResolvedValue([
+      { packageKey: 'owner/repo', artifact: '.codex/commands/foo.md' },
+    ])
 
     await runRemove('owner/repo')
 
-    expect(checkbox).not.toHaveBeenCalled()
     expect(existsSync('.codex/prompts/foo.md')).toBe(false)
     expect(existsSync('.ai/.codex/commands/foo.md')).toBe(false)
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['owner/repo']).toBeUndefined()
   })
 })
 
@@ -115,18 +124,23 @@ describe('local package (.)', () => {
     })
   }
 
-  it('removes symlinks but leaves .ai/ source files intact without prompting', async () => {
+  it('removes selected local symlinks but leaves .ai/ source files intact', async () => {
     await setupLocal()
+    vi.mocked(checkbox).mockResolvedValue([
+      { packageKey: '.', artifact: 'skills/coding' },
+    ])
 
     await runRemove('.')
 
-    expect(checkbox).not.toHaveBeenCalled()
     expect(existsSync('.agents/skills/coding')).toBe(false)
-    expect(existsSync('.claude/agents/reviewer.md')).toBe(false)
+    expect(existsSync('.claude/agents/reviewer.md')).toBe(true)
     expect(existsSync('.ai/skills/coding/SKILL.md')).toBe(true)
     expect(existsSync('.ai/.claude/agents/reviewer.md')).toBe(true)
 
     const aiJson = await readAiJson()
-    expect(aiJson.packages['.']).toBeUndefined()
+    expect(aiJson.packages['.']).toEqual({
+      version: '*',
+      linked: ['.claude/agents/reviewer.md'],
+    })
   })
 })

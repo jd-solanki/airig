@@ -1,62 +1,102 @@
 import { Command } from 'commander'
+import { checkbox } from '@inquirer/prompts'
 import { rm } from 'node:fs/promises'
 import { readAiJson, writeAiJson, removePackage } from '../lib/ai-json.js'
-import { deriveTargetOwnership, unlinkFiles } from '../lib/linker.js'
+import { targetPathsForArtifact } from '../lib/provider-registry.js'
+import { unlinkFiles } from '../lib/linker.js'
 
+interface RemoveChoice {
+  packageKey: string
+  artifact: string
+}
 
-export async function runRemove(pkg: string): Promise<void> {
+export async function runRemove(pkg?: string): Promise<void> {
   const aiJson = await readAiJson()
+  const packageKeys = pkg ? [pkg] : Object.keys(aiJson.packages)
 
-  if (!aiJson.packages[pkg]) {
-    throw new Error(
-      `Package "${pkg}" is not installed.\n` +
-      '  Check installed packages in .ai/ai.json',
-    )
+  if (packageKeys.length === 0) {
+    throw new Error('No AI Setup artifacts are installed.')
   }
 
-  const isLocal = pkg === '.'
-  const linkedArtifacts = aiJson.packages[pkg].linked
-  const ownership = deriveTargetOwnership(aiJson)
-  const ownedEntries = [...ownership.values()]
-    .flat()
-    .filter(owner => owner.packageKey === pkg)
-  const ownedTargets = [...new Set(ownedEntries.map(owner => owner.targetPath))]
-
-  await unlinkFiles(ownedTargets)
-
-  const filesDeleted: string[] = []
-  if (!isLocal) {
-    for (const artifact of new Set(linkedArtifacts)) {
-      const aiPath = `.ai/${artifact}`
-      try {
-        await rm(aiPath, { recursive: true, force: true })
-        filesDeleted.push(aiPath)
-      } catch {
-        // Source cleanup should not fail the uninstall when the local tree was already edited.
-      }
+  for (const packageKey of packageKeys) {
+    if (!aiJson.packages[packageKey]) {
+      throw new Error(
+        `Package "${packageKey}" is not installed.\n` +
+        '  Check installed packages in .ai/ai.json',
+      )
     }
   }
 
-  removePackage(aiJson, pkg)
+  const choices = packageKeys.flatMap(packageKey =>
+    aiJson.packages[packageKey].linked.map(artifact => ({
+      value: { packageKey, artifact },
+      name: `${packageKey} / ${categoryForArtifact(artifact)} / ${artifact}`,
+      checked: false,
+    })),
+  )
+
+  if (choices.length === 0) {
+    for (const packageKey of packageKeys) removePackage(aiJson, packageKey)
+    await writeAiJson(aiJson)
+    console.log('No linked files found.')
+    return
+  }
+
+  const selected = await checkbox<RemoveChoice>({
+    message: 'Select files to remove:',
+    choices,
+  })
+
+  if (selected.length === 0) {
+    console.log('No files selected.')
+    return
+  }
+
+  const selectedByPackage = new Map<string, Set<string>>()
+  for (const { packageKey, artifact } of selected) {
+    const artifacts = selectedByPackage.get(packageKey) ?? new Set<string>()
+    artifacts.add(artifact)
+    selectedByPackage.set(packageKey, artifacts)
+  }
+
+  let symlinkCount = 0
+  let sourceCount = 0
+  for (const [packageKey, artifacts] of selectedByPackage) {
+    const isLocal = packageKey === '.'
+    const targetPaths = [...artifacts].flatMap(artifact => targetPathsForArtifact(artifact))
+    await unlinkFiles([...new Set(targetPaths)])
+    symlinkCount += targetPaths.length
+
+    if (!isLocal) {
+      for (const artifact of artifacts) {
+        await rm(`.ai/${artifact}`, { recursive: true, force: true })
+        sourceCount += 1
+      }
+    }
+
+    const entry = aiJson.packages[packageKey]
+    entry.linked = entry.linked.filter(artifact => !artifacts.has(artifact))
+    if (entry.linked.length === 0) removePackage(aiJson, packageKey)
+  }
+
   await writeAiJson(aiJson)
 
-  if (ownedTargets.length > 0) {
-    console.log(`\nRemoved symlinks (${ownedTargets.length}):`)
-    for (const t of ownedTargets) console.log(`  ✔ ${t}`)
-  }
+  console.log(`\nRemoved ${selected.length} file(s), ${symlinkCount} symlink target(s), and ${sourceCount} source file(s).`)
+}
 
-  if (filesDeleted.length > 0) {
-    console.log(`\nDeleted from .ai/ (${filesDeleted.length}):`)
-    for (const f of filesDeleted) console.log(`  ✔ ${f}`)
-  }
-
-  console.log(`\nPackage "${pkg}" fully uninstalled.`)
+function categoryForArtifact(artifact: string): string {
+  if (artifact === 'AGENTS.md' || artifact === 'CLAUDE.md') return 'Project Instruction Files'
+  if (artifact.startsWith('skills/')) return 'Skills'
+  if (artifact.includes('/commands/')) return 'Custom Commands'
+  if (artifact.includes('/agents/')) return 'Agents'
+  if (artifact.includes('/hooks/')) return 'Hooks'
+  return 'Other'
 }
 
 export const removeCommand = new Command('remove')
-  .description('Remove an installed Setup Release or local provider links')
-  .argument('<package>', 'Package to remove, e.g. owner/repo or . for the local package')
-  .action(async (pkg: string) => {
+  .description('Interactively remove active AI Setup artifacts')
+  .argument('[package]', 'Optional package to remove from, e.g. owner/repo or .')
+  .action(async (pkg: string | undefined) => {
     try {
       await runRemove(pkg)
     } catch (err) {

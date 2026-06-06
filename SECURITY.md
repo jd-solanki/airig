@@ -59,7 +59,7 @@ Immutability is always verified online via the GitHub API — on every `add` and
 
 ### 3. Always-Online Integrity Verification
 
-Every command that writes downloaded Setup Release content verifies release immutability through a live GitHub API call at write time. ohmyai does not cache attestation results in `ai.json`; an install or update must prove the target release is immutable during that command run.
+Every command that writes remote Setup Release content verifies release immutability through a live GitHub API call at write time. ohmyai does not cache attestation results in `ai.json`; an install or update must prove the target release is immutable during that command run.
 
 This means an old successful install does not become permanent trust for future writes. If GitHub reports that a release is no longer immutable, cannot provide the required attestation, or cannot be verified, `add` and `update` fail before changing local setup content.
 
@@ -86,7 +86,7 @@ A malicious new release cannot reach any user unless they deliberately run `upda
 
 ### 5. Conflict Detection via Linked Artifacts
 
-Each package entry in `ai.json` records the source artifacts that are currently linked:
+Each package entry in `ai.json` records the source artifacts that are installed and active:
 
 ```json
 {
@@ -99,11 +99,11 @@ Each package entry in `ai.json` records the source artifacts that are currently 
 }
 ```
 
-Before linking, the CLI expands every package's `linked` list through the Provider Registry into target symlink paths and builds an in-memory ownership index. If a Setup Release attempts to link a target already claimed by another remote Setup Release, the operation errors before files are written. No silent last-write-wins overwrite.
+Before remote `add` writes selected artifacts into `.ai/`, the CLI expands every package's `linked` list through the Provider Registry into target symlink paths and builds an in-memory ownership index. If a Setup Release attempts to claim a target already owned by another remote Setup Release, or if a real file or wrong symlink already occupies a target path, the operation errors before files are written. No silent last-write-wins overwrite.
 
-### 6. `link` is Fully Local
+### 6. Local Authoring is Fully Local
 
-The `link` command wires `.ai/<provider>/` into provider config directories using only files already on disk. It makes no network calls, fetches no releases, and performs no version or attestation checks. It is the author's command for wiring up their own setup while building it — the two concerns (local authoring and remote distribution) are completely separated.
+The `add .` command wires local `.ai/` artifacts into provider config directories using only files already on disk. It makes no network calls, fetches no releases, and performs no version or attestation checks. It is the Author's command for wiring up their own setup while building it — the two concerns (local authoring and remote distribution) are completely separated.
 
 ---
 
@@ -135,4 +135,4 @@ ohmyai does not currently validate or restrict `allowed-tools` declarations in s
 | **`remove` updates manifest** | No — lockfile diverges silently after `remove` | Yes — `remove` is atomic: files deleted and `ai.json` updated together |
 | **Supply chain scan** | Snyk scan on blob fast path only; git clone fallback bypasses scanner | No scanner (exact pinning + attestation gate makes silent propagation impossible) |
 | **Known CVE-class issues** | `isRepoPrivate` null-return leaked private repo telemetry | N/A |
-| **Author dogfooding** | Author cannot install their own skills repo — bootstrapping problem | `link` is local-only; authors wire up their own setup with no GitHub involvement |
+| **Author dogfooding** | Author cannot install their own skills repo — bootstrapping problem | `add .` is local-only; Authors wire up their own setup with no GitHub involvement |

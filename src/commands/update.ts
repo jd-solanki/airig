@@ -5,7 +5,7 @@ import { readAiJson, writeAiJson } from '../lib/ai-json.js'
 import { fetchReleaseInfo, downloadAsset } from '../lib/github.js'
 import { parseExactPackageRef } from '../lib/package-ref.js'
 import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry.js'
-import { replaceReleaseArtifact, withExtractedReleaseAi } from '../lib/setup-release.js'
+import { copyReleaseArtifactsToLocal, withExtractedReleaseAi } from '../lib/setup-release.js'
 import { reconcilePackageLinks, unlinkFiles } from '../lib/linker.js'
 
 export async function runUpdate(pkg: string): Promise<void> {
@@ -44,9 +44,7 @@ export async function runUpdate(pkg: string): Promise<void> {
     const prunedLinked = previousLinked.filter(artifact => newArtifactSet.has(artifact))
     const deletedLinked = previousLinked.filter(artifact => !newArtifactSet.has(artifact))
 
-    for (const artifact of newArtifacts) {
-      await replaceReleaseArtifact(extractedAiDir, artifact)
-    }
+    await copyReleaseArtifactsToLocal(extractedAiDir, prunedLinked)
 
     const targetsToUnlink = new Set<string>()
     for (const artifact of deletedLinked) {
@@ -65,7 +63,7 @@ export async function runUpdate(pkg: string): Promise<void> {
 
     console.log(
       `\nUpdated ${owner}/${repo} from ${previousVersion} to ${resolvedTag} ` +
-      `(${newArtifacts.length} downloaded, ${deletedLinked.length} pruned).`,
+      `(${prunedLinked.length} active file(s) refreshed, ${deletedLinked.length} pruned).`,
     )
   })
 }

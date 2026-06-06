@@ -90,7 +90,7 @@ describe('runUpdate', () => {
     expect(await readFile('.ai/skills/tdd/SKILL.md', 'utf-8')).toBe('# old')
   })
 
-  it('updates release content, preserves linked artifacts, prunes deleted linked artifacts, and leaves new artifacts unlinked', async () => {
+  it('updates linked artifacts, prunes deleted linked artifacts, and ignores new upstream artifacts', async () => {
     await makeFile('.ai/skills/tdd/SKILL.md', '# old tdd')
     await makeFile('.ai/skills/removed/SKILL.md', '# removed')
     await makeSymlink('.ai/skills/removed', '.agents/skills/removed')
@@ -115,7 +115,7 @@ describe('runUpdate', () => {
     expect(fetchReleaseInfo).toHaveBeenCalledWith('owner', 'repo', 'v2.0.0', expect.any(Object))
     expect(downloadAsset).toHaveBeenCalledWith('https://example.test/ai.zip')
     expect(await readFile('.ai/skills/tdd/SKILL.md', 'utf-8')).toBe('# new tdd')
-    expect(existsSync('.ai/skills/new/SKILL.md')).toBe(true)
+    expect(existsSync('.ai/skills/new/SKILL.md')).toBe(false)
     expect(existsSync('.ai/skills/removed')).toBe(false)
     expect((await lstat('.agents/skills/tdd')).isSymbolicLink()).toBe(true)
     expect(existsSync('.agents/skills/removed')).toBe(false)

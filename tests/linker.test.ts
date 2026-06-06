@@ -63,25 +63,25 @@ describe('linkProviders', () => {
     expect(result.skipped).toEqual([{ path: '.claude/agents/agent.md', reason: 'already-linked' }])
   })
 
-  it('skips with conflict-real-file reason when a real file exists at target', async () => {
+  it('reports a target conflict without writing linked state when a real file exists at target', async () => {
     await makeFile('.ai/.claude/agents/agent.md')
     await makeFile('.claude/agents/agent.md', 'real file')
 
-    const result = await linkProviders(['claude'])
+    await expect(linkProviders(['claude'])).rejects.toThrow('target paths are already occupied')
 
-    expect(result.linked).toHaveLength(0)
-    expect(result.skipped).toEqual([{ path: '.claude/agents/agent.md', reason: 'conflict-real-file' }])
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['.']).toBeUndefined()
   })
 
-  it('skips with conflict-wrong-symlink reason when symlink points to wrong source', async () => {
+  it('reports a target conflict without writing linked state when symlink points to wrong source', async () => {
     await makeFile('.ai/.claude/agents/agent.md')
     await mkdir('.claude/agents', { recursive: true })
     await symlink('/dev/null', '.claude/agents/agent.md')
 
-    const result = await linkProviders(['claude'])
+    await expect(linkProviders(['claude'])).rejects.toThrow('target paths are already occupied')
 
-    expect(result.linked).toHaveLength(0)
-    expect(result.skipped).toEqual([{ path: '.claude/agents/agent.md', reason: 'conflict-wrong-symlink' }])
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['.']).toBeUndefined()
   })
 
   it('always links skills regardless of provider selection', async () => {
@@ -208,6 +208,26 @@ describe('reconcilePackageLinks', () => {
     )).rejects.toThrow('Conflicts detected')
     expect(existsSync('.agents/skills/tdd')).toBe(false)
     expect(aiJson.packages['owner/two'].linked).toEqual([])
+  })
+
+  it('blocks target conflicts before mutating package linked state', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md')
+    await makeFile('.agents/skills/tdd', 'real file')
+    const aiJson: AiJson = {
+      packages: {
+        'owner/repo': { version: '1.0.0', linked: [] },
+      },
+    }
+
+    await expect(reconcilePackageLinks(
+      aiJson,
+      'owner/repo',
+      ['claude'],
+      ['skills/tdd'],
+      ['skills/tdd'],
+    )).rejects.toThrow('target paths are already occupied')
+
+    expect(aiJson.packages['owner/repo'].linked).toEqual([])
   })
 
   it('removes local ownership when a remote package takes over a local link', async () => {

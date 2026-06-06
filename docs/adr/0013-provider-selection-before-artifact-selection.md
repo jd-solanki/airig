@@ -1,3 +1,9 @@
 # Provider selection precedes artifact selection
 
-When an interactive command needs both provider and artifact choices, it asks for providers first and artifacts second. Provider selection determines the default checked artifacts, including provider-recognized root Project Instruction Files, while the user can still override the artifact checklist. `add` and `update` manage downloaded Setup Release content in `.ai/`; `link` reconciles which downloaded artifacts are wired into provider target paths. `link` checks existing symlinks against the artifact checklist: checked artifacts are linked, newly checked artifacts are linked, and newly unchecked artifacts have only their target symlinks removed while their source files remain in `.ai/`. `remove` is responsible for deleting a Setup Release's downloaded `.ai/` files. `update` does not re-prompt or link newly-added upstream artifacts; after refreshing `.ai/`, it reconciles symlinks for artifacts still in the user's `linked` list and prunes deleted upstream artifacts from that list.
+When an interactive command needs both provider and artifact choices, it asks for providers first and artifacts second. Provider selection determines which Provider Registry rules apply, including provider-recognized root Project Instruction Files, while the User can still choose the exact artifacts.
+
+`add` uses this flow for both remote Setup Releases and local `.` authoring. For remote Setup Releases, artifact choices are read from the extracted release before anything is written into `.ai/`. For local `add .`, artifact choices are read from the Author's existing `.ai/` directory.
+
+`update` never prompts. It refreshes only artifacts already in the package's `linked` list and ignores new upstream artifacts until the User explicitly runs `add owner/repo`.
+
+`remove` prompts over active artifacts grouped by package and artifact category. It does not ask for providers because removal is driven by the existing `linked` list and Provider Registry expansion.

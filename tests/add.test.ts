@@ -53,7 +53,7 @@ async function makeReleaseZip(): Promise<Buffer> {
 }
 
 describe('runAdd', () => {
-  it('downloads the full immutable release, creates an empty manifest entry, then invokes link', async () => {
+  it('selects remote release files before writing only active artifacts', async () => {
     const zipBuffer = await makeReleaseZip()
     vi.mocked(fetchReleaseInfo).mockResolvedValue({
       tag: 'v1.2.3',
@@ -67,13 +67,12 @@ describe('runAdd', () => {
       const message = (prompt as { message: string }).message
       promptMessages.push(message)
 
-      if (message === 'Select providers to link:') {
-        const raw = JSON.parse(await readFile('.ai/ai.json', 'utf-8'))
-        expect(raw.packages['owner/repo']).toEqual({ version: 'v1.2.3', linked: [] })
+      if (message === 'Select providers to add:') {
+        expect(existsSync('.ai')).toBe(false)
         return ['claude']
       }
 
-      if (message === 'Select files to link:') {
+      if (message === 'Select files to add:') {
         return ['skills/tdd']
       }
 
@@ -84,17 +83,13 @@ describe('runAdd', () => {
 
     expect(fetchReleaseInfo).toHaveBeenCalledWith('owner', 'repo', undefined, expect.any(Object))
     expect(downloadAsset).toHaveBeenCalledWith('https://example.test/ai.zip')
-    expect(promptMessages).toEqual(['Select providers to link:', 'Select files to link:'])
+    expect(promptMessages).toEqual(['Select providers to add:', 'Select files to add:'])
 
     expect(existsSync('.ai/skills/tdd/SKILL.md')).toBe(true)
-    expect(existsSync('.ai/skills/unused/SKILL.md')).toBe(true)
-    expect(existsSync('.ai/.claude/agents/reviewer.md')).toBe(true)
-    expect(existsSync('.ai/.codex/commands/later.md')).toBe(true)
-    expect(existsSync('.ai/AGENTS.md')).toBe(true)
-
-    const claudeStats = await lstat('.ai/CLAUDE.md')
-    expect(claudeStats.isSymbolicLink()).toBe(true)
-    expect(await readlink('.ai/CLAUDE.md')).toBe('AGENTS.md')
+    expect(existsSync('.ai/skills/unused/SKILL.md')).toBe(false)
+    expect(existsSync('.ai/.claude/agents/reviewer.md')).toBe(false)
+    expect(existsSync('.ai/.codex/commands/later.md')).toBe(false)
+    expect(existsSync('.ai/AGENTS.md')).toBe(false)
 
     expect(existsSync('.agents/skills/tdd')).toBe(true)
     expect(existsSync('.agents/skills/unused')).toBe(false)
@@ -106,7 +101,115 @@ describe('runAdd', () => {
     })
   })
 
-  it('errors before downloading when the release is already installed', async () => {
+  it('preserves setup symlink dependencies for selected artifacts', async () => {
+    const zipBuffer = await makeReleaseZip()
+    vi.mocked(fetchReleaseInfo).mockResolvedValue({
+      tag: 'v1.2.3',
+      assetDownloadUrl: 'https://example.test/ai.zip',
+      immutable: true,
+    })
+    vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
+
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['claude']
+      if (message === 'Select files to add:') return ['CLAUDE.md']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await runAdd('owner/repo')
+
+    const claudeStats = await lstat('.ai/CLAUDE.md')
+    expect(claudeStats.isSymbolicLink()).toBe(true)
+    expect(await readlink('.ai/CLAUDE.md')).toBe('AGENTS.md')
+    expect(existsSync('.ai/AGENTS.md')).toBe(true)
+    expect((await lstat('CLAUDE.md')).isSymbolicLink()).toBe(true)
+  })
+
+  it('uses add to select more files from the currently pinned installed version', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md', '# TDD')
+    await writeAiJson({
+      packages: {
+        'owner/repo': { version: 'v1.2.3', linked: ['skills/tdd'] },
+      },
+    })
+    const zipBuffer = await makeReleaseZip()
+    vi.mocked(fetchReleaseInfo).mockResolvedValue({
+      tag: 'v1.2.3',
+      assetDownloadUrl: 'https://example.test/ai.zip',
+      immutable: true,
+    })
+    vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
+
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['claude']
+      if (message === 'Select files to add:') return ['skills/unused']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await runAdd('owner/repo')
+
+    expect(fetchReleaseInfo).toHaveBeenCalledWith('owner', 'repo', 'v1.2.3', expect.any(Object))
+    expect(existsSync('.ai/skills/tdd/SKILL.md')).toBe(true)
+    expect(existsSync('.ai/skills/unused/SKILL.md')).toBe(true)
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['owner/repo']).toEqual({
+      version: 'v1.2.3',
+      linked: ['skills/tdd', 'skills/unused'],
+    })
+  })
+
+  it('reports target conflicts before writing selected release files into .ai', async () => {
+    const zipBuffer = await makeReleaseZip()
+    vi.mocked(fetchReleaseInfo).mockResolvedValue({
+      tag: 'v1.2.3',
+      assetDownloadUrl: 'https://example.test/ai.zip',
+      immutable: true,
+    })
+    vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
+    await makeFile('.agents/skills/tdd', 'real file')
+
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['claude']
+      if (message === 'Select files to add:') return ['skills/tdd']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await expect(runAdd('owner/repo')).rejects.toThrow('target paths are already occupied')
+
+    expect(existsSync('.ai/skills/tdd/SKILL.md')).toBe(false)
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['owner/repo']).toBeUndefined()
+  })
+
+  it('reports symlink dependency source conflicts before writing selected release files', async () => {
+    const zipBuffer = await makeReleaseZip()
+    vi.mocked(fetchReleaseInfo).mockResolvedValue({
+      tag: 'v1.2.3',
+      assetDownloadUrl: 'https://example.test/ai.zip',
+      immutable: true,
+    })
+    vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
+    await makeFile('.ai/AGENTS.md', '# existing')
+
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['claude']
+      if (message === 'Select files to add:') return ['CLAUDE.md']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await expect(runAdd('owner/repo')).rejects.toThrow('would overwrite existing .ai source files')
+
+    expect(await readFile('.ai/AGENTS.md', 'utf-8')).toBe('# existing')
+    expect(existsSync('.ai/CLAUDE.md')).toBe(false)
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['owner/repo']).toBeUndefined()
+  })
+
+  it('errors before downloading when an installed package is added at a different version', async () => {
     await writeAiJson({
       packages: {
         'owner/repo': { version: 'v1.2.3', linked: [] },
@@ -114,7 +217,7 @@ describe('runAdd', () => {
     })
 
     await expect(runAdd('owner/repo@v2.0.0')).rejects.toThrow(
-      'Use ohmyai link to change active artifacts, ohmyai update to change versions, or ohmyai remove first.',
+      'Use ohmyai update <owner/repo>@<version> to move versions.',
     )
 
     expect(fetchReleaseInfo).not.toHaveBeenCalled()

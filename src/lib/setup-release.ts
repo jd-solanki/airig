@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, mkdtemp, readdir, readlink, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -96,10 +96,63 @@ export async function copyReleaseAiToLocal(extractedAiDir: string): Promise<void
   }
 }
 
+export async function copyReleaseArtifactsToLocal(
+  extractedAiDir: string,
+  artifacts: string[],
+): Promise<void> {
+  await mkdir('.ai', { recursive: true })
+  const artifactsToCopy = await expandReleaseArtifactsWithSymlinkDependencies(extractedAiDir, artifacts)
+
+  for (const artifact of artifactsToCopy) {
+    const sourcePath = path.join(extractedAiDir, artifact)
+    const targetPath = path.join('.ai', artifact)
+    await mkdir(path.dirname(targetPath), { recursive: true })
+    await rm(targetPath, { recursive: true, force: true })
+    await cp(sourcePath, targetPath, { recursive: true, force: true, verbatimSymlinks: true })
+  }
+}
+
+export async function expandReleaseArtifactsWithSymlinkDependencies(
+  extractedAiDir: string,
+  artifacts: string[],
+): Promise<string[]> {
+  const expanded = new Set<string>()
+
+  async function visit(artifact: string): Promise<void> {
+    if (expanded.has(artifact)) return
+    expanded.add(artifact)
+
+    const sourcePath = path.join(extractedAiDir, artifact)
+    const stat = await lstatIfExists(sourcePath)
+    if (!stat?.isSymbolicLink()) return
+
+    const linkTarget = await readlink(sourcePath)
+    if (path.isAbsolute(linkTarget)) return
+
+    const dependency = path.relative(extractedAiDir, path.resolve(path.dirname(sourcePath), linkTarget))
+    if (dependency.startsWith('..') || dependency === '') return
+    if (existsSync(path.join(extractedAiDir, dependency))) await visit(dependency)
+  }
+
+  for (const artifact of artifacts) {
+    await visit(artifact)
+  }
+
+  return [...expanded]
+}
+
 export async function replaceReleaseArtifact(extractedAiDir: string, artifact: string): Promise<void> {
   const sourcePath = path.join(extractedAiDir, artifact)
   const targetPath = path.join('.ai', artifact)
   await mkdir(path.dirname(targetPath), { recursive: true })
   await rm(targetPath, { recursive: true, force: true })
   await cp(sourcePath, targetPath, { recursive: true, force: true, verbatimSymlinks: true })
+}
+
+async function lstatIfExists(filePath: string): Promise<Awaited<ReturnType<typeof import('node:fs/promises').lstat>> | undefined> {
+  try {
+    return await lstat(filePath)
+  } catch {
+    return undefined
+  }
 }

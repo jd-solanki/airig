@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import { linkCommand } from './commands/link.js'
 import { publishCommand } from './commands/publish.js'
 import { addCommand } from './commands/add.js'
 import { removeCommand } from './commands/remove.js'
 import { updateCommand } from './commands/update.js'
 
 const program = new Command('ohmyai')
-  .description('Manage project-scoped AI Setup releases and local provider links')
+  .description('Manage project-scoped AI Setup artifacts')
 
-program.addCommand(linkCommand)
 program.addCommand(publishCommand)
 program.addCommand(addCommand)
 program.addCommand(updateCommand)

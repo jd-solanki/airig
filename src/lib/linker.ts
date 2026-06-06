@@ -37,6 +37,11 @@ export interface PackageConflict {
   owner: OwnedTarget
 }
 
+interface TargetConflict {
+  targetPath: string
+  reason: 'real-file' | 'wrong-symlink'
+}
+
 export function deriveTargetOwnership(aiJson: AiJson): Map<string, OwnedTarget[]> {
   const ownership = new Map<string, OwnedTarget[]>()
 
@@ -123,6 +128,68 @@ export async function linkPackageArtifacts(
   return result
 }
 
+async function targetConflictFor(
+  sourcePath: string,
+  targetPath: string,
+): Promise<TargetConflict | undefined> {
+  let targetStat: Awaited<ReturnType<typeof lstat>>
+  try {
+    targetStat = await lstat(targetPath)
+  } catch {
+    return undefined
+  }
+
+  if (!targetStat.isSymbolicLink()) return { targetPath, reason: 'real-file' }
+
+  const existing = await readlink(targetPath)
+  const resolvedExisting = path.resolve(path.dirname(targetPath), existing)
+  const resolvedSource = path.resolve(sourcePath)
+  if (resolvedExisting === resolvedSource) return undefined
+  return { targetPath, reason: 'wrong-symlink' }
+}
+
+async function assertNoTargetConflicts(
+  providers: string[],
+  artifactLabels: string[],
+): Promise<void> {
+  const conflicts: TargetConflict[] = []
+  const allowedTargets = new Map<string, string>()
+
+  for (const artifact of artifactLabels) {
+    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
+      allowedTargets.set(targetPath, `.ai/${artifact}`)
+    }
+  }
+
+  for (const [targetPath, sourcePath] of allowedTargets) {
+    const conflict = await targetConflictFor(sourcePath, targetPath)
+    if (conflict) conflicts.push(conflict)
+  }
+
+  if (conflicts.length === 0) return
+
+  throw new Error(
+    `Conflicts detected — the following target paths are already occupied:\n` +
+    conflicts
+      .map(conflict => `  ${conflict.targetPath}  (${conflict.reason})`)
+      .join('\n') + '\n' +
+    '  Remove or move the conflicting files, then run the command again.',
+  )
+}
+
+function assertNoBlockingSkips(skipped: SkippedEntry[]): void {
+  const conflicts = skipped.filter(entry => entry.reason !== 'already-linked')
+  if (conflicts.length === 0) return
+
+  throw new Error(
+    `Conflicts detected — the following target paths could not be linked:\n` +
+    conflicts
+      .map(conflict => `  ${conflict.path}  (${conflict.reason})`)
+      .join('\n') + '\n' +
+    '  Remove or move the conflicting files, then run the command again.',
+  )
+}
+
 export function findRemotePackageConflicts(
   aiJson: AiJson,
   packageKey: string,
@@ -174,6 +241,8 @@ export async function reconcilePackageLinks(
     )
   }
 
+  await assertNoTargetConflicts(providers, selected)
+
   const ownership = deriveTargetOwnership(aiJson)
   const targetPathsToUnlink = new Set<string>()
   for (const artifact of removed) {
@@ -207,6 +276,7 @@ export async function reconcilePackageLinks(
   }
 
   const { linked, skipped } = await linkPackageArtifacts(providers, selected)
+  assertNoBlockingSkips(skipped)
   aiJson.packages[packageKey].linked = [...new Set([...preserved, ...selected])]
 
   return {
