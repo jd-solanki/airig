@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, lstat, readlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -17,10 +17,11 @@ afterEach(async () => {
 })
 
 describe('create', () => {
-  it('produces a valid zip with expected files', async () => {
-    const sourceDir = path.join(tmpDir, 'source')
+  it('packages setup artifacts and excludes local manifest state', async () => {
+    const sourceDir = path.join(tmpDir, '.ai')
     await mkdir(path.join(sourceDir, 'skills'), { recursive: true })
     await writeFile(path.join(sourceDir, 'ai.json'), '{}')
+    await writeFile(path.join(sourceDir, 'AGENTS.md'), '# Instructions')
     await writeFile(path.join(sourceDir, 'skills', 'tdd.md'), '# TDD')
 
     const zipPath = path.join(tmpDir, 'test.zip')
@@ -32,9 +33,9 @@ describe('create', () => {
     await mkdir(extractDir, { recursive: true })
     await extractZip(zipPath, { dir: extractDir })
 
-    const baseName = path.basename(sourceDir)
-    expect(existsSync(path.join(extractDir, baseName, 'ai.json'))).toBe(true)
-    expect(existsSync(path.join(extractDir, baseName, 'skills', 'tdd.md'))).toBe(true)
+    expect(existsSync(path.join(extractDir, '.ai', 'ai.json'))).toBe(false)
+    expect(existsSync(path.join(extractDir, '.ai', 'AGENTS.md'))).toBe(true)
+    expect(existsSync(path.join(extractDir, '.ai', 'skills', 'tdd.md'))).toBe(true)
   })
 
   it('roundtrip create→extract is lossless', async () => {
@@ -55,22 +56,41 @@ describe('create', () => {
     expect(extracted).toBe(content)
   })
 
-  it('includes extraDirs in the same zip', async () => {
+  it('does not include global setup content', async () => {
     const sourceDir = path.join(tmpDir, '.ai')
     const extraDir = path.join(tmpDir, '.ai.global')
     await mkdir(sourceDir, { recursive: true })
     await mkdir(extraDir, { recursive: true })
-    await writeFile(path.join(sourceDir, 'ai.json'), '{}')
+    await writeFile(path.join(sourceDir, 'AGENTS.md'), '# project')
     await writeFile(path.join(extraDir, 'global.md'), '# global')
 
     const zipPath = path.join(tmpDir, 'test.zip')
-    await create(sourceDir, zipPath, [extraDir])
+    await create(sourceDir, zipPath)
 
     const extractDir = path.join(tmpDir, 'extracted')
     await mkdir(extractDir, { recursive: true })
     await extractZip(zipPath, { dir: extractDir })
 
-    expect(existsSync(path.join(extractDir, '.ai', 'ai.json'))).toBe(true)
-    expect(existsSync(path.join(extractDir, '.ai.global', 'global.md'))).toBe(true)
+    expect(existsSync(path.join(extractDir, '.ai', 'AGENTS.md'))).toBe(true)
+    expect(existsSync(path.join(extractDir, '.ai.global', 'global.md'))).toBe(false)
+  })
+
+  it('preserves setup symlinks', async () => {
+    const sourceDir = path.join(tmpDir, '.ai')
+    await mkdir(sourceDir, { recursive: true })
+    await writeFile(path.join(sourceDir, 'AGENTS.md'), '# Shared')
+    await symlink('AGENTS.md', path.join(sourceDir, 'CLAUDE.md'))
+
+    const zipPath = path.join(tmpDir, 'test.zip')
+    await create(sourceDir, zipPath)
+
+    const extractDir = path.join(tmpDir, 'extracted')
+    await mkdir(extractDir, { recursive: true })
+    await extractZip(zipPath, { dir: extractDir })
+
+    const claudePath = path.join(extractDir, '.ai', 'CLAUDE.md')
+    const stats = await lstat(claudePath)
+    expect(stats.isSymbolicLink()).toBe(true)
+    expect(await readlink(claudePath)).toBe('AGENTS.md')
   })
 })

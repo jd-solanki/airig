@@ -1,6 +1,5 @@
 import { Command } from 'commander'
 import { execSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { create as createZip } from '../lib/zip.js'
@@ -41,6 +40,10 @@ function resolveOwnerRepo(): { owner: string; repo: string } {
   return parsed
 }
 
+export function createPublishZip(zipPath = path.join(process.cwd(), 'ai.zip')): Promise<void> {
+  return createZip('.ai', zipPath)
+}
+
 export const publishCommand = new Command('publish')
   .description('Create an immutable GitHub release with ai.zip')
   .argument('[tag]', 'Git tag to release (defaults to latest local tag)')
@@ -67,8 +70,7 @@ export const publishCommand = new Command('publish')
       }
 
       const zipPath = path.join(process.cwd(), 'ai.zip')
-      const extraDirs = existsSync('.ai.global') ? ['.ai.global'] : []
-      await createZip('.ai', zipPath, extraDirs)
+      await createPublishZip(zipPath)
 
       const url = await publishRelease({ owner, repo, tag, assetPath: zipPath, octokit })
       await rm(zipPath, { force: true })
