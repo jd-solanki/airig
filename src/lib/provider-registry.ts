@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises'
+import { lstat, readdir } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 
 export interface SymlinkRule {
@@ -15,6 +15,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
   claude: {
     name: 'claude',
     rules: [
+      { source: '.ai/CLAUDE.md', target: 'CLAUDE.md' },
       { source: '.ai/.claude/agents', target: '.claude/agents' },
       { source: '.ai/.claude/commands', target: '.claude/commands' },
     ],
@@ -22,6 +23,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
   codex: {
     name: 'codex',
     rules: [
+      { source: '.ai/AGENTS.md', target: 'AGENTS.md' },
       { source: '.ai/.codex/agents', target: '.codex/agents' },
       { source: '.ai/.codex/commands', target: '.codex/prompts' },
     ],
@@ -69,13 +71,24 @@ export function artifactForTarget(targetPath: string): string | undefined {
 }
 
 export async function listArtifacts(rootDir: string, providers = Object.keys(PROVIDER_REGISTRY)): Promise<string[]> {
-  const artifacts: string[] = []
+  const artifacts = new Set<string>()
   for (const rule of rulesFor(providers)) {
     const relSource = rule.source.startsWith('.ai/') ? rule.source.slice('.ai/'.length) : rule.source
+    const sourcePath = join(rootDir, relSource)
+    let sourceStat: Awaited<ReturnType<typeof lstat>>
     try {
-      const entries = await readdir(join(rootDir, relSource))
-      for (const e of entries) artifacts.push(`${relSource}/${e}`)
-    } catch { /* dir absent */ }
+      sourceStat = await lstat(sourcePath)
+    } catch {
+      continue
+    }
+
+    if (!sourceStat.isDirectory()) {
+      artifacts.add(relSource)
+      continue
+    }
+
+    const entries = await readdir(sourcePath)
+    for (const e of entries) artifacts.add(`${relSource}/${e}`)
   }
-  return artifacts
+  return [...artifacts]
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, mkdir, writeFile, lstat, symlink, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, lstat, readlink, symlink, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -91,6 +91,49 @@ describe('linkProviders', () => {
 
     const stat = await lstat('.agents/skills/tdd')
     expect(stat.isSymbolicLink()).toBe(true)
+  })
+
+  it('links claude project instruction files to root targets', async () => {
+    await makeFile('.ai/AGENTS.md')
+    await makeFile('.ai/CLAUDE.md')
+
+    const result = await linkProviders(['claude'])
+
+    expect(result.linked).toEqual(['CLAUDE.md'])
+    expect(existsSync('AGENTS.md')).toBe(false)
+    expect((await lstat('CLAUDE.md')).isSymbolicLink()).toBe(true)
+  })
+
+  it('links a symlinked CLAUDE.md source without synthesizing a real file', async () => {
+    await makeFile('.ai/AGENTS.md')
+    await symlink('AGENTS.md', '.ai/CLAUDE.md')
+
+    await linkProviders(['claude'])
+
+    expect((await lstat('CLAUDE.md')).isSymbolicLink()).toBe(true)
+    expect(await readlink('CLAUDE.md')).toBe('.ai/CLAUDE.md')
+    expect((await lstat('.ai/CLAUDE.md')).isSymbolicLink()).toBe(true)
+  })
+
+  it('does not link AGENTS.md through the claude provider', async () => {
+    await makeFile('.ai/AGENTS.md')
+
+    const result = await linkProviders(['claude'])
+
+    expect(result.linked).toEqual([])
+    expect(existsSync('AGENTS.md')).toBe(false)
+    expect(existsSync('CLAUDE.md')).toBe(false)
+    expect(existsSync('.ai/CLAUDE.md')).toBe(false)
+  })
+
+  it('links AGENTS.md through the codex provider', async () => {
+    await makeFile('.ai/AGENTS.md')
+
+    const result = await linkProviders(['codex'])
+
+    expect(result.linked).toEqual(['AGENTS.md'])
+    expect(result.skipped).toHaveLength(0)
+    expect((await lstat('AGENTS.md')).isSymbolicLink()).toBe(true)
   })
 
   it('writes "." package entry with a positive linked list', async () => {

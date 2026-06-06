@@ -64,6 +64,25 @@ describe('runLink', () => {
     ])
   })
 
+  it('shows claude project instruction files alongside provider artifacts', async () => {
+    await makeFile('.ai/AGENTS.md')
+    await makeFile('.ai/CLAUDE.md')
+    await makeFile('.ai/.claude/agents/reviewer.md')
+    vi.mocked(checkbox).mockResolvedValue(['CLAUDE.md'])
+
+    await runLink('claude', { singleLineSummary: true })
+
+    expect((vi.mocked(checkbox).mock.calls[0][0] as {
+      choices: Array<{ value: string, name: string, checked: boolean }>
+    }).choices).toEqual([
+      { value: 'CLAUDE.md', name: 'CLAUDE.md', checked: true },
+      { value: '.claude/agents/reviewer.md', name: '.claude/agents/reviewer.md', checked: true },
+    ])
+    expect(existsSync('AGENTS.md')).toBe(false)
+    expect(existsSync('CLAUDE.md')).toBe(true)
+    expect(existsSync('.claude/agents/reviewer.md')).toBe(false)
+  })
+
   it('unlinks deselected artifacts, keeps source files, and updates linked labels', async () => {
     await makeFile('.ai/.claude/agents/keep.md')
     await makeFile('.ai/.claude/agents/remove.md')
