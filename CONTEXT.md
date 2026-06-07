@@ -2,7 +2,7 @@
 
 ## What It Is
 
-`airig` is a CLI tool for distributing and managing entire AI setups across providers (Claude Code, Codex, Copilot, Gemini, OpenCode, etc.). It is published as the npm package `@airig/cli`, but users are encouraged to install it globally and run the short `airig` command. It fills the gap left by `npx skills`, which only distributes `SKILL.md` files and requires manual installation of agents, commands, and hooks.
+`airig` is a CLI tool for distributing and managing entire AI Setups across providers (Claude Code, Codex, Copilot, Gemini, OpenCode, etc.). It is published as the npm Package `@airig/cli`, but users are encouraged to install it globally and run the short `airig` command. It fills the gap left by `npx skills`, which only distributes `SKILL.md` files and requires manual installation of agents, commands, and hooks.
 
 ## Core Insight
 
@@ -34,11 +34,11 @@ A provider-recognized root filename where a Project Instruction File is exposed 
 
 ### Package
 
-The public npm CLI package named `@airig/cli` that provides the `airig` command. Published to npm so users can install it globally with `npm install --global @airig/cli`; one-off usage remains available through `npx @airig/cli`.
+The public npm CLI Package named `@airig/cli` that provides the `airig` command. Published to npm so users can install it globally with `npm install --global @airig/cli`; one-off usage remains available through `npx @airig/cli`. A Package release distributes the CLI through npm; it is not an AI Setup and does not create `ai.zip`.
 
 ### Setup Release
 
-A versioned AI Setup published by an author on GitHub. Identified as `<owner>/<repo>` (e.g. `yourname/setup`). Distributed via GitHub immutable releases as an `ai.zip` asset.
+A versioned AI Setup published by an author on GitHub. Identified as `<owner>/<repo>` (e.g. `yourname/setup`). Distributed via GitHub immutable releases as an `ai.zip` asset. A Setup Release is created by `airig publish [tag]`; it is not an npm Package publication.
 
 ### Provider
 
@@ -170,6 +170,20 @@ airig publish [tag]                 # publish project .ai artifacts as immutable
 ```
 
 Public `link`, `check`, `sync`, `list`, and global scope are post-MVP.
+
+---
+
+## Release Flows
+
+### Package Release
+
+Maintainers run `pnpm release` to publish the `@airig/cli` npm Package. The script uses `bumpp` to choose the next Package version, update Package metadata, create the release commit, create a `v<version>` tag, and push the commit and tag.
+
+Pushed `v*` tags trigger the `Publish Package` GitHub Actions workflow. The workflow installs with pnpm, runs the existing test command, builds the CLI, and publishes the Package to npm. npm publishing uses trusted publishing with GitHub Actions OIDC, so the repository must not carry a long-lived npm token for Package releases.
+
+### Setup Release
+
+Authors run `airig publish [tag]` to publish a Setup Release. This command zips `.ai/` into an immutable GitHub release asset named `ai.zip`; it does not publish the npm Package.
 
 ---
 
