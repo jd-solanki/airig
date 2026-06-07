@@ -13,7 +13,7 @@ import {
 let tmpDir: string
 
 beforeEach(async () => {
-  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-github-test-'))
+  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-github-test-'))
 })
 
 afterEach(async () => {

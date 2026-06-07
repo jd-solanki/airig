@@ -34,7 +34,7 @@ export async function runAdd(pkg: string): Promise<void> {
   if (existingEntry && inputTag && inputTag !== existingEntry.version) {
     throw new Error(
       `${packageKey} is already installed at ${existingEntry.version}.\n` +
-      '  Use ohmyai update <owner/repo>@<version> to move versions.',
+      '  Use airig update <owner/repo>@<version> to move versions.',
     )
   }
 
@@ -52,7 +52,7 @@ export async function runAdd(pkg: string): Promise<void> {
 
   console.log(`  Downloading ${owner}/${repo}@${resolvedTag}...`)
   const assetBuffer = await downloadAsset(assetDownloadUrl)
-  await withExtractedReleaseAi(assetBuffer, 'ohmyai-add-', async extractedAiDir => {
+  await withExtractedReleaseAi(assetBuffer, 'airig-add-', async extractedAiDir => {
     const providers = await promptProviders()
     if (providers.length === 0) {
       console.log('No providers selected.')
@@ -172,7 +172,7 @@ function assertNoRemoteConflicts(
     conflicts
       .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
       .join('\n') + '\n' +
-    '  Remove the conflicting files first with: ohmyai remove',
+    '  Remove the conflicting files first with: airig remove',
   )
 }
 

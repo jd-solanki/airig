@@ -9,7 +9,7 @@ import { create } from '../src/lib/zip.js'
 let tmpDir: string
 
 beforeEach(async () => {
-  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-zip-test-'))
+  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-zip-test-'))
 })
 
 afterEach(async () => {

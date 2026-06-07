@@ -1,6 +1,6 @@
 # Active artifacts only command model
 
-Remote `.ai/` content is active setup source, not a downloaded release cache. For remote Setup Releases, ohmyai writes selected active artifacts into `.ai/`, plus any relative symlink dependency needed to preserve an Author-provided setup symlink such as `CLAUDE.md -> AGENTS.md`.
+Remote `.ai/` content is active setup source, not a downloaded release cache. For remote Setup Releases, airig writes selected active artifacts into `.ai/`, plus any relative symlink dependency needed to preserve an Author-provided setup symlink such as `CLAUDE.md -> AGENTS.md`.
 
 `add` is the public activation command. Remote `add` verifies the immutable Setup Release, extracts it into temporary storage, prompts for providers first and artifacts second, checks conflicts before writing, then copies selected artifacts into `.ai/`, creates target symlinks, and records selected labels in `ai.json`. `add .` is the local Author dogfooding command and wires selected existing `.ai/` artifacts without network access.
 

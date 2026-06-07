@@ -1,6 +1,6 @@
 # npx skills CLI — Versioning Research
 
-> _NOTE: This document is for `skills.sh CLI` and not for `ohmyai`_
+> _NOTE: This document is for `skills.sh CLI` and not for `airig`_
 
 Reference document for designing a competing tool. Based on analysis of the
 `vercel-labs/skills` source code (v1.5.9, released 2026-05-27), the local

@@ -1,18 +1,29 @@
 {
-  "name": "ohmyai",
+  "name": "airig",
   "version": "0.0.1",
   "description": "Distribute and manage AI setups across providers",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jd-solanki/airig.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jd-solanki/airig/issues"
+  },
+  "homepage": "https://github.com/jd-solanki/airig#readme",
   "packageManager": "pnpm@10.19.0",
   "engines": {
     "node": "^24.11.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist"
   ],
   "bin": {
-    "ohmyai": "./dist/index.js"
+    "airig": "./dist/index.js"
   },
   "main": "./dist/index.js",
   "scripts": {
@@ -22,7 +33,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "pkg:link": "pnpm link --global",
-    "pkg:unlink": "pnpm unlink --global ohmyai"
+    "pkg:unlink": "pnpm unlink --global airig"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.5.2",

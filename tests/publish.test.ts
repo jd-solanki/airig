@@ -35,7 +35,7 @@ describe('parseRemoteUrl', () => {
 describe('createPublishZip', () => {
   it('packages only project setup artifacts for release', async () => {
     const originalCwd = process.cwd()
-    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-publish-test-'))
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-publish-test-'))
 
     try {
       process.chdir(tmpDir)
@@ -74,7 +74,7 @@ describe('loadPublishGithubTokenFromCwd', () => {
   it('loads GITHUB_TOKEN from .env in the current working directory', async () => {
     const originalCwd = process.cwd()
     const originalToken = process.env.GITHUB_TOKEN
-    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-publish-env-test-'))
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-publish-env-test-'))
 
     try {
       process.chdir(tmpDir)
@@ -97,7 +97,7 @@ describe('loadPublishGithubTokenFromCwd', () => {
   it('keeps an exported GITHUB_TOKEN ahead of .env', async () => {
     const originalCwd = process.cwd()
     const originalToken = process.env.GITHUB_TOKEN
-    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-publish-env-test-'))
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-publish-env-test-'))
 
     try {
       process.chdir(tmpDir)

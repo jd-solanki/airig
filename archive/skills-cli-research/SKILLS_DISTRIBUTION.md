@@ -1,6 +1,6 @@
 # Skills Distribution Research
 
-> _NOTE: This document is for `skills.sh CLI` and not for `ohmyai`_
+> _NOTE: This document is for `skills.sh CLI` and not for `airig`_
 
 How to create, distribute, and list AI agent skills on [skills.sh](https://www.skills.sh).
 

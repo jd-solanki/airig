@@ -21,7 +21,7 @@ let originalCwd: string
 
 beforeEach(async () => {
   originalCwd = process.cwd()
-  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-add-test-'))
+  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-add-test-'))
   process.chdir(tmpDir)
   vi.resetAllMocks()
   vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -217,7 +217,7 @@ describe('runAdd', () => {
     })
 
     await expect(runAdd('owner/repo@v2.0.0')).rejects.toThrow(
-      'Use ohmyai update <owner/repo>@<version> to move versions.',
+      'Use airig update <owner/repo>@<version> to move versions.',
     )
 
     expect(fetchReleaseInfo).not.toHaveBeenCalled()

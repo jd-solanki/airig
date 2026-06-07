@@ -1,4 +1,4 @@
-# ohmyai Security Model
+# airig Security Model
 
 ---
 
@@ -32,7 +32,7 @@ If a popular Setup Release's repository is deleted, an attacker can recreate it 
 
 ### 1. GitHub Immutable Releases
 
-ohmyai uses GitHub's Immutable Releases feature as the foundation of its distribution security.
+airig uses GitHub's Immutable Releases feature as the foundation of its distribution security.
 
 When a release is published as immutable:
 - The Git tag is locked to a specific commit and cannot be moved, modified, or deleted
@@ -40,14 +40,14 @@ When a release is published as immutable:
 - GitHub generates a cryptographic release attestation containing the tag, commit SHA, and asset digests
 - Even if the repository is deleted and recreated at the same path, immutable release tags cannot be reused — closing the repository impersonation attack
 
-Authors publish via `npx ohmyai publish`, which always follows the recommended workflow: create draft → attach `ai.zip` → publish as immutable. The CLI enforces this sequence; there is no flag to skip immutability.
+Authors publish via `airig publish`, which always follows the recommended workflow: create draft → attach `ai.zip` → publish as immutable. The CLI enforces this sequence; there is no flag to skip immutability.
 
 ### 2. Immutability Gate on Every Install
 
 Every `add` and `update` command verifies the target release's attestation before writing a single file to disk.
 
 ```
-$ npx ohmyai add yourname/setup@1.2.0
+$ airig add yourname/setup@1.2.0
   → fetching release metadata...
   → verifying immutability attestation...
   ✖ yourname/setup@1.2.0 is not an immutable release. Refusing to install.
@@ -59,7 +59,7 @@ Immutability is always verified online via the GitHub API — on every `add` and
 
 ### 3. Always-Online Integrity Verification
 
-Every command that writes remote Setup Release content verifies release immutability through a live GitHub API call at write time. ohmyai does not cache attestation results in `ai.json`; an install or update must prove the target release is immutable during that command run.
+Every command that writes remote Setup Release content verifies release immutability through a live GitHub API call at write time. airig does not cache attestation results in `ai.json`; an install or update must prove the target release is immutable during that command run.
 
 This means an old successful install does not become permanent trust for future writes. If GitHub reports that a release is no longer immutable, cannot provide the required attestation, or cannot be verified, `add` and `update` fail before changing local setup content.
 
@@ -80,7 +80,7 @@ Every installed Setup Release is pinned to an exact version in `ai.json`:
 
 There are no semver ranges (`^1.0.0`, `~2.1.0`). Version transitions require explicit user intent:
 
-- `npx ohmyai update yourname/setup@1.3.0` — bumps to that exact version, re-verifies attestation
+- `airig update yourname/setup@1.3.0` — bumps to that exact version, re-verifies attestation
 
 A malicious new release cannot reach any user unless they deliberately run `update` with that version. Compromising an author's account and publishing `1.9.0` affects no existing installs.
 
@@ -107,7 +107,7 @@ The `add .` command wires local `.ai/` artifacts into provider config directorie
 
 ---
 
-## What ohmyai Does Not Protect Against
+## What airig Does Not Protect Against
 
 **Malicious content in a legitimately immutable release**
 Immutability guarantees the bits don't change after publication — it does not guarantee the content is safe. An author can intentionally publish a harmful skill as an immutable release. Users should review setup content before installing, treat `git diff` output after every install as a security artifact, and only install from authors they trust.
@@ -116,13 +116,13 @@ Immutability guarantees the bits don't change after publication — it does not 
 If an attacker controls the author's GitHub account before the release is published, they can publish a malicious immutable release. The immutability gate will accept it because the attestation will be valid. Exact pinning limits the blast radius to users who explicitly upgrade to that version.
 
 **Broad `allowed-tools` declarations**
-ohmyai does not currently validate or restrict `allowed-tools` declarations in skill files. Users should audit tool permissions when reviewing downloaded setup content.
+airig does not currently validate or restrict `allowed-tools` declarations in skill files. Users should audit tool permissions when reviewing downloaded setup content.
 
 ---
 
-## Security Comparison: ohmyai vs `npx skills`
+## Security Comparison: airig vs `npx skills`
 
-| Concern | `npx skills` | `ohmyai` |
+| Concern | `npx skills` | `airig` |
 |---|---|---|
 | **Release immutability** | None — assets can be deleted and re-uploaded, tags can be force-pushed | GitHub Immutable Releases — assets and tags permanently sealed after publish |
 | **Attestation verification** | None | Cryptographic GitHub attestation verified on every `add` and `update` |

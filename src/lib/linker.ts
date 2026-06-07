@@ -237,7 +237,7 @@ export async function reconcilePackageLinks(
       conflicts
         .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
         .join('\n') + '\n' +
-      '  Remove the conflicting package first with: ohmyai remove <owner/repo>',
+      '  Remove the conflicting package first with: airig remove <owner/repo>',
     )
   }
 

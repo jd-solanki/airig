@@ -18,7 +18,7 @@ let originalCwd: string
 
 beforeEach(async () => {
   originalCwd = process.cwd()
-  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-aijson-test-'))
+  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-aijson-test-'))
   process.chdir(tmpDir)
 })
 

@@ -14,7 +14,7 @@ let originalCwd: string
 
 beforeEach(async () => {
   originalCwd = process.cwd()
-  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-provider-registry-test-'))
+  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-provider-registry-test-'))
   process.chdir(tmpDir)
 })
 

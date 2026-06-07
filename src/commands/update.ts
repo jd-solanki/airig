@@ -18,7 +18,7 @@ export async function runUpdate(pkg: string): Promise<void> {
   if (!entry) {
     throw new Error(
       `Package "${packageKey}" is not installed.\n` +
-      '  Install it first with: ohmyai add <owner/repo>[@version]',
+      '  Install it first with: airig add <owner/repo>[@version]',
     )
   }
 
@@ -36,7 +36,7 @@ export async function runUpdate(pkg: string): Promise<void> {
   console.log(`  Downloading ${owner}/${repo}@${resolvedTag}...`)
   const assetBuffer = await downloadAsset(assetDownloadUrl)
 
-  await withExtractedReleaseAi(assetBuffer, 'ohmyai-update-', async extractedAiDir => {
+  await withExtractedReleaseAi(assetBuffer, 'airig-update-', async extractedAiDir => {
     const newArtifacts = await listArtifacts(extractedAiDir, providers)
     const newArtifactSet = new Set(newArtifacts)
     const previousVersion = entry.version

@@ -20,7 +20,7 @@ let originalCwd: string
 
 beforeEach(async () => {
   originalCwd = process.cwd()
-  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ohmyai-update-test-'))
+  tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-update-test-'))
   process.chdir(tmpDir)
   vi.resetAllMocks()
   vi.spyOn(console, 'log').mockImplementation(() => {})

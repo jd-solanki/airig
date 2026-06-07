@@ -1,12 +1,12 @@
-# ohmyai — Domain Context
+# airig — Domain Context
 
 ## What It Is
 
-`ohmyai` is a CLI tool (`npx ohmyai`) for distributing and managing entire AI setups across providers (Claude Code, Codex, Copilot, Gemini, OpenCode, etc.). It fills the gap left by `npx skills`, which only distributes `SKILL.md` files and requires manual installation of agents, commands, and hooks.
+`airig` is a CLI tool for distributing and managing entire AI setups across providers (Claude Code, Codex, Copilot, Gemini, OpenCode, etc.). It is published as the npm package `airig`, but users are encouraged to install it globally and run the short `airig` command. It fills the gap left by `npx skills`, which only distributes `SKILL.md` files and requires manual installation of agents, commands, and hooks.
 
 ## Core Insight
 
-Authors dogfood their own setup before sharing it. They place their AI setup in `.ai/`, run `npx ohmyai add .` to wire selected local artifacts into their own repo, then cut a GitHub release to share it. Users install selected artifacts with one command and stay current via explicit version bumps.
+Authors dogfood their own setup before sharing it. They place their AI setup in `.ai/`, run `airig add .` to wire selected local artifacts into their own repo, then cut a GitHub release to share it. Users install selected artifacts with one command and stay current via explicit version bumps.
 
 ---
 
@@ -34,7 +34,7 @@ A provider-recognized root filename where a Project Instruction File is exposed 
 
 ### Package
 
-The public npm CLI package named `ohmyai` that provides the `ohmyai` command. Published to npm so users can run `npx ohmyai`.
+The public npm CLI package named `airig` that provides the `airig` command. Published to npm so users can install it globally with `npm install --global airig`; one-off usage remains available through `npx airig`.
 
 ### Setup Release
 
@@ -137,16 +137,16 @@ The security check run on every `add` and `update` before any files are written.
 ## Version Model
 
 - Versions are always **exact** in `ai.json` (e.g. `"1.2.0"`, never `"^1.0.0"`)
-- `npx ohmyai add yourname/setup` resolves to the latest immutable release and pins that exact version
-- `npx ohmyai add yourname/setup@1.2.0` installs that specific immutable release
-- `npx ohmyai update yourname/setup@1.3.0` bumps to that explicit immutable release
+- `airig add yourname/setup` resolves to the latest immutable release and pins that exact version
+- `airig add yourname/setup@1.2.0` installs that specific immutable release
+- `airig update yourname/setup@1.3.0` bumps to that explicit immutable release
 - No automatic version resolution — every version transition is a deliberate user decision
 
 ---
 
 ## Update Behaviour
 
-Running `npx ohmyai update yourname/setup@<version>`:
+Running `airig update yourname/setup@<version>`:
 
 - Verifies the target release is immutable (errors if not)
 - Replaces files in the package's current `linked` list when they exist in the new release
@@ -162,11 +162,11 @@ Running `npx ohmyai update yourname/setup@<version>`:
 ## v1 Command Surface
 
 ```
-npx ohmyai add <owner/repo>[@version]    # interactively install and link selected artifacts from an immutable Setup Release
-npx ohmyai add .                         # interactively link selected local Author artifacts
-npx ohmyai update <owner/repo>@<version> # refresh currently linked artifacts at an exact immutable version
-npx ohmyai remove [owner/repo|.]         # interactively remove active artifacts
-npx ohmyai publish [tag]                 # publish project .ai artifacts as immutable ai.zip
+airig add <owner/repo>[@version]    # interactively install and link selected artifacts from an immutable Setup Release
+airig add .                         # interactively link selected local Author artifacts
+airig update <owner/repo>@<version> # refresh currently linked artifacts at an exact immutable version
+airig remove [owner/repo|.]         # interactively remove active artifacts
+airig publish [tag]                 # publish project .ai artifacts as immutable ai.zip
 ```
 
 Public `link`, `check`, `sync`, `list`, and global scope are post-MVP.
@@ -176,17 +176,17 @@ Public `link`, `check`, `sync`, `list`, and global scope are post-MVP.
 ## Author Workflow
 
 1. Create `.ai/<provider>/` directories with skills, agents, commands, hooks
-2. Run `npx ohmyai add .` to wire selected `.ai/` artifacts into provider config dirs — multi-select prompt picks providers and artifacts
+2. Run `airig add .` to wire selected `.ai/` artifacts into provider config dirs — multi-select prompt picks providers and artifacts
 3. Iterate on the setup freely; rerun `add .` when adding new local artifacts
-4. Tag a release and run `npx ohmyai publish` to zip `.ai/` and upload as an immutable release
-5. Share `npx ohmyai add yourname/repo`
+4. Tag a release and run `airig publish` to zip `.ai/` and upload as an immutable release
+5. Share `airig add yourname/repo`
 
 ## User Workflow
 
-1. Run `npx ohmyai add yourname/setup` — latest immutable release is inspected in temp, selected artifacts are written to `.ai/`, and `ai.json` is created with an exact version
+1. Run `airig add yourname/setup` — latest immutable release is inspected in temp, selected artifacts are written to `.ai/`, and `ai.json` is created with an exact version
 2. Commit `.ai/`, `ai.json` to git
 3. Edit active files in `.ai/` freely to customize
-4. Run `npx ohmyai update yourname/setup@<version>` explicitly when ready to upgrade
+4. Run `airig update yourname/setup@<version>` explicitly when ready to upgrade
 
 ---
 
@@ -200,7 +200,7 @@ Public `link`, `check`, `sync`, `list`, and global scope are post-MVP.
 
 ## Key Differences from `npx skills`
 
-| Concern | `npx skills` | `ohmyai` |
+| Concern | `npx skills` | `airig` |
 |---|---|---|
 | Distribution unit | Single `SKILL.md` file | Entire AI setup (skills + agents + commands + hooks) |
 | Versioning | Raw GitHub clone, no releases | GitHub immutable releases, exact version pinning |
