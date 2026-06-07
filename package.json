@@ -1,5 +1,5 @@
 {
-  "name": "airig",
+  "name": "@airig/cli",
   "version": "0.0.1",
   "description": "Distribute and manage AI setups across providers",
   "license": "MIT",

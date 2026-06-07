@@ -2,7 +2,7 @@
 
 ## What It Is
 
-`airig` is a CLI tool for distributing and managing entire AI setups across providers (Claude Code, Codex, Copilot, Gemini, OpenCode, etc.). It is published as the npm package `airig`, but users are encouraged to install it globally and run the short `airig` command. It fills the gap left by `npx skills`, which only distributes `SKILL.md` files and requires manual installation of agents, commands, and hooks.
+`airig` is a CLI tool for distributing and managing entire AI setups across providers (Claude Code, Codex, Copilot, Gemini, OpenCode, etc.). It is published as the npm package `@airig/cli`, but users are encouraged to install it globally and run the short `airig` command. It fills the gap left by `npx skills`, which only distributes `SKILL.md` files and requires manual installation of agents, commands, and hooks.
 
 ## Core Insight
 
@@ -34,7 +34,7 @@ A provider-recognized root filename where a Project Instruction File is exposed 
 
 ### Package
 
-The public npm CLI package named `airig` that provides the `airig` command. Published to npm so users can install it globally with `npm install --global airig`; one-off usage remains available through `npx airig`.
+The public npm CLI package named `@airig/cli` that provides the `airig` command. Published to npm so users can install it globally with `npm install --global @airig/cli`; one-off usage remains available through `npx @airig/cli`.
 
 ### Setup Release
 

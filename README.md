@@ -7,7 +7,7 @@ Distribute and manage AI setups across coding agents from one project-local `.ai
 Install the CLI globally to use the short `airig` command:
 
 ```sh
-npm install --global airig
+npm install --global @airig/cli
 ```
 
 ```sh
@@ -21,14 +21,14 @@ airig publish [tag]
 For one-off usage without a global install, run the npm package directly:
 
 ```sh
-npx airig add <owner/repo>[@version]
-npx airig add .
-npx airig update <owner/repo>@<version>
-npx airig remove [owner/repo|.]
-npx airig publish [tag]
+npx @airig/cli add <owner/repo>[@version]
+npx @airig/cli add .
+npx @airig/cli update <owner/repo>@<version>
+npx @airig/cli remove [owner/repo|.]
+npx @airig/cli publish [tag]
 ```
 
-The package is named `airig`; the installed binary is `airig`.
+The package is named `@airig/cli`; the installed binary is `airig`.
 
 ## What It Does
 
