@@ -1,0 +1,49 @@
+name: Publish AI Setup
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  # Keep the built-in GITHUB_TOKEN read-only: checkout only needs repository reads,
+  # while release publishing is handled by the narrower custom PAT below.
+  contents: read
+
+jobs:
+  publish:
+    name: Publish AI Setup
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish AI Setup
+        env:
+          # Use a fine-grained PAT instead of github.token because airig checks
+          # immutable-release settings, which require Administration: read access.
+          #
+          # To create this secret:
+          # 1. Create a fine-grained PAT with access only to this repository.
+          # 2. Grant repository permissions:
+          #    - Contents: Read and write
+          #    - Administration: Read-only
+          # 3. Add it as AIRIG_PUBLISH_TOKEN in:
+          #    Settings -> Secrets and variables -> Actions -> New repository secret
+          GITHUB_TOKEN: ${{ secrets.AIRIG_PUBLISH_TOKEN }}
+        run: pnpm exec airig publish "${GITHUB_REF_NAME}"

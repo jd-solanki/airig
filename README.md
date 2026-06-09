@@ -58,8 +58,28 @@ Package releases are separate from Setup Releases. `airig publish [tag]` creates
 4. Run `airig publish` to upload `ai.zip` to an immutable GitHub Setup Release.
 5. Share `airig add yourname/repo`.
 
+For AI Setup repositories, use [`bumpp`](https://github.com/antfu-collective/bumpp)
+to create and push release tags from a package script:
+
+```json
+{
+  "scripts": {
+    "release": "bumpp"
+  }
+}
+```
+
+To publish Setup Releases from your AI Setup repository with GitHub Actions, copy
+`resources/templates/publish.yml` to `.github/workflows/publish.yml` in that
+repository. The workflow publishes when `bumpp` pushes a `v*` tag and expects an
+`AIRIG_PUBLISH_TOKEN` repository secret. Create that secret from a fine-grained
+GitHub PAT scoped only to the Setup Release repository with:
+
+- `Contents`: Read and write
+- `Administration`: Read-only
+
 ## Requirements
 
 - Node.js `24.11.0` or newer in the Node 24 release line.
 - GitHub immutable releases enabled for repositories that publish Setup Releases.
-- `GITHUB_TOKEN` with repository write access when running `publish`.
+- `GITHUB_TOKEN` when running `publish`. For local use or custom GitHub Actions workflows, use a fine-grained GitHub PAT scoped to the Setup Release repository with `Contents` read/write access to create releases and `Administration` read-only access so `airig publish` can verify immutable releases are enabled before publishing.

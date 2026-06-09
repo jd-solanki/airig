@@ -80,6 +80,7 @@ export const publishCommand = new Command('publish')
 
       const octokit = createOctokit(token)
 
+      // Setup Releases must be immutable so users can trust ai.zip won't be swapped after publishing.
       const immutable = await getImmutableReleasesStatus(owner, repo, octokit)
       if (!immutable.enabled) {
         console.error(`✖ Immutable releases are not enabled for ${owner}/${repo}.`)
