@@ -38,12 +38,12 @@
   "dependencies": {
     "@inquirer/prompts": "^7.5.2",
     "@octokit/rest": "^21.1.1",
-    "archiver": "^7.0.1",
+    "archiver": "^8.0.0",
     "commander": "^14.0.0",
     "extract-zip": "^2.0.1"
   },
   "devDependencies": {
-    "@types/archiver": "^6.0.3",
+    "@types/archiver": "^8.0.0",
     "@types/node": "^22.15.21",
     "bumpp": "^11.1.0",
     "tsdown": "^0.12.6",
