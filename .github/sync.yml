@@ -1,0 +1,3 @@
+jd-solanki/.ai:
+  - source: resources/templates/publish.yml
+    dest: .github/workflows/publish.yml
