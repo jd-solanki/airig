@@ -209,6 +209,29 @@ describe('runAdd', () => {
     expect(aiJson.packages['owner/repo']).toBeUndefined()
   })
 
+  it('offers already-linked local artifacts that are missing symlinks for a newly selected provider', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md', '# TDD')
+    await mkdir(path.join(tmpDir, '.agents/skills'), { recursive: true })
+    await symlink('../../.ai/skills/tdd', '.agents/skills/tdd')
+    await writeAiJson({
+      packages: { '.': { version: '*', linked: ['skills/tdd'] } },
+    })
+
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['claude', 'codex']
+      if (message === 'Select local files to add:') return ['skills/tdd']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await runAdd('.')
+
+    expect(existsSync('.claude/skills/tdd')).toBe(true)
+    expect(existsSync('.agents/skills/tdd')).toBe(true)
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['.'].linked).toEqual(['skills/tdd'])
+  })
+
   it('errors before downloading when an installed package is added at a different version', async () => {
     await writeAiJson({
       packages: {

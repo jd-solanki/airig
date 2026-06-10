@@ -128,7 +128,12 @@ async function runAddLocal(): Promise<void> {
 
   const currentLinked = aiJson.packages['.'].linked
   const selectable = (await listArtifacts('.ai', providers))
-    .filter(artifact => !currentLinked.includes(artifact))
+    .filter(artifact => {
+      if (!currentLinked.includes(artifact)) return true
+      // Still offer artifacts that are missing symlinks for the selected providers
+      // (e.g. adding a new provider for an artifact that was previously linked for another provider only)
+      return targetPathsForArtifact(artifact, providers).some(tp => !existsSync(tp))
+    })
   if (selectable.length === 0) {
     console.log('No new local files found.')
     return
