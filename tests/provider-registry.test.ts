@@ -33,12 +33,13 @@ describe('PROVIDER_REGISTRY', () => {
     expect(Object.keys(PROVIDER_REGISTRY)).toEqual(['claude', 'codex'])
   })
 
-  it('claude has claude instructions, agents, and commands rules', () => {
+  it('claude has claude instructions, agents, commands, and skills rules', () => {
     const { rules } = PROVIDER_REGISTRY.claude
     expect(rules).toEqual([
       { source: '.ai/CLAUDE.md', target: 'CLAUDE.md' },
       { source: '.ai/.claude/agents', target: '.claude/agents' },
       { source: '.ai/.claude/commands', target: '.claude/commands' },
+      { source: '.ai/skills', target: '.claude/skills' },
     ])
   })
 
@@ -56,24 +57,21 @@ describe('PROVIDER_REGISTRY', () => {
 })
 
 describe('rulesFor', () => {
-  it('always includes the skills rule regardless of providers', () => {
-    const rules = rulesFor([])
-    expect(rules).toHaveLength(1)
-    expect(rules[0].source).toBe('.ai/skills')
-    expect(rules[0].target).toBe('.agents/skills')
+  it('returns no rules for an empty provider list', () => {
+    expect(rulesFor([])).toHaveLength(0)
   })
 
-  it('includes provider rules followed by the skills rule', () => {
+  it('includes all claude rules including the claude skills rule', () => {
     const rules = rulesFor(['claude'])
-    expect(rules).toHaveLength(4) // 3 claude rules + skills
+    expect(rules).toHaveLength(4) // CLAUDE.md + agents + commands + skills
     expect(rules[0].source).toBe('.ai/CLAUDE.md')
-    expect(rules[rules.length - 1].source).toBe('.ai/skills')
+    expect(rules[rules.length - 1]).toEqual({ source: '.ai/skills', target: '.claude/skills' })
   })
 
   it('includes all provider rules when all providers are given', () => {
     const rules = rulesFor(Object.keys(PROVIDER_REGISTRY))
-    // claude(3) + codex(3) + skills(1)
-    expect(rules).toHaveLength(7)
+    // claude(4) + codex(4)
+    expect(rules).toHaveLength(8)
   })
 })
 

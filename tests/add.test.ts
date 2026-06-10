@@ -91,8 +91,8 @@ describe('runAdd', () => {
     expect(existsSync('.ai/.codex/commands/later.md')).toBe(false)
     expect(existsSync('.ai/AGENTS.md')).toBe(false)
 
-    expect(existsSync('.agents/skills/tdd')).toBe(true)
-    expect(existsSync('.agents/skills/unused')).toBe(false)
+    expect(existsSync('.claude/skills/tdd')).toBe(true)
+    expect(existsSync('.claude/skills/unused')).toBe(false)
 
     const aiJson = await readAiJson()
     expect(aiJson.packages['owner/repo']).toEqual({
@@ -168,7 +168,7 @@ describe('runAdd', () => {
       immutable: true,
     })
     vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
-    await makeFile('.agents/skills/tdd', 'real file')
+    await makeFile('.claude/skills/tdd', 'real file')
 
     vi.mocked(checkbox).mockImplementation(async prompt => {
       const message = (prompt as { message: string }).message

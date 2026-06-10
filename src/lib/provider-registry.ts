@@ -18,6 +18,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
       { source: '.ai/CLAUDE.md', target: 'CLAUDE.md' },
       { source: '.ai/.claude/agents', target: '.claude/agents' },
       { source: '.ai/.claude/commands', target: '.claude/commands' },
+      { source: '.ai/skills', target: '.claude/skills' },
     ],
   },
   codex: {
@@ -26,17 +27,13 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
       { source: '.ai/AGENTS.md', target: 'AGENTS.md' },
       { source: '.ai/.codex/agents', target: '.codex/agents' },
       { source: '.ai/.codex/commands', target: '.codex/prompts' },
+      { source: '.ai/skills', target: '.agents/skills' },
     ],
   },
 }
 
-const SKILLS_RULE: SymlinkRule = {
-  source: '.ai/skills',
-  target: '.agents/skills',
-}
-
 export function rulesFor(providers: string[]): SymlinkRule[] {
-  return [...providers.flatMap(p => PROVIDER_REGISTRY[p].rules), SKILLS_RULE]
+  return providers.flatMap(p => PROVIDER_REGISTRY[p].rules)
 }
 
 export function targetPathsForArtifact(

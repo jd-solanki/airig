@@ -84,13 +84,22 @@ describe('linkProviders', () => {
     expect(aiJson.packages['.']).toBeUndefined()
   })
 
-  it('always links skills regardless of provider selection', async () => {
+  it('links skills to the provider-specific skills target', async () => {
     await makeFile('.ai/skills/tdd/SKILL.md')
 
     await linkProviders(['claude'])
 
-    const stat = await lstat('.agents/skills/tdd')
+    const stat = await lstat('.claude/skills/tdd')
     expect(stat.isSymbolicLink()).toBe(true)
+  })
+
+  it('links skills to both provider targets when claude and codex are selected', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md')
+
+    await linkProviders(['claude', 'codex'])
+
+    expect((await lstat('.claude/skills/tdd')).isSymbolicLink()).toBe(true)
+    expect((await lstat('.agents/skills/tdd')).isSymbolicLink()).toBe(true)
   })
 
   it('links claude project instruction files to root targets', async () => {
@@ -206,13 +215,13 @@ describe('reconcilePackageLinks', () => {
       ['skills/tdd'],
       ['skills/tdd'],
     )).rejects.toThrow('Conflicts detected')
-    expect(existsSync('.agents/skills/tdd')).toBe(false)
+    expect(existsSync('.claude/skills/tdd')).toBe(false)
     expect(aiJson.packages['owner/two'].linked).toEqual([])
   })
 
   it('blocks target conflicts before mutating package linked state', async () => {
     await makeFile('.ai/skills/tdd/SKILL.md')
-    await makeFile('.agents/skills/tdd', 'real file')
+    await makeFile('.claude/skills/tdd', 'real file')
     const aiJson: AiJson = {
       packages: {
         'owner/repo': { version: '1.0.0', linked: [] },
@@ -247,7 +256,7 @@ describe('reconcilePackageLinks', () => {
       ['skills/tdd'],
     )
 
-    expect(result.localOverrides).toEqual(['.agents/skills/tdd'])
+    expect(result.localOverrides).toEqual(['.claude/skills/tdd'])
     expect(aiJson.packages['.'].linked).toEqual([])
     expect(aiJson.packages['owner/repo'].linked).toEqual(['skills/tdd'])
   })
@@ -275,6 +284,12 @@ describe('deriveTargetOwnership', () => {
       },
     })
 
+    expect(ownership.get('.claude/skills/local')).toEqual([{
+      packageKey: '.',
+      version: '*',
+      artifact: 'skills/local',
+      targetPath: '.claude/skills/local',
+    }])
     expect(ownership.get('.agents/skills/local')).toEqual([{
       packageKey: '.',
       version: '*',

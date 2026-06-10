@@ -53,7 +53,7 @@ The committed directory at the repo root that holds project-scoped AI Setup cont
   ai.json
   AGENTS.md        ← root Project Instruction File
   CLAUDE.md        ← root Project Instruction File
-  skills/          ← provider-agnostic; linked to .agents/skills/ per-file
+  skills/          ← linked to provider-specific skill targets per-file (e.g. .claude/skills/, .agents/skills/)
   .claude/
     agents/
     commands/
@@ -113,7 +113,7 @@ The `ai.zip` file that authors upload to a GitHub immutable release. Contains AI
 
 ### Add
 
-The act of selecting AI Setup artifacts and making them active in the current repository. Each managed file gets its own symlink, preserving unmanaged files in the same target directories. `add` prompts for providers first and artifacts second. Skills (`.ai/skills/`) are always considered regardless of which providers are selected.
+The act of selecting AI Setup artifacts and making them active in the current repository. Each managed file gets its own symlink, preserving unmanaged files in the same target directories. `add` prompts for providers first and artifacts second. Skills (`.ai/skills/`) are treated as regular provider artifacts — each provider declares its own skills target (e.g. claude → `.claude/skills/`, codex → `.agents/skills/`).
 
 ### Link Conflict
 
