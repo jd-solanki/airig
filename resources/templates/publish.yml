@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -47,3 +49,8 @@ jobs:
           #    Settings -> Secrets and variables -> Actions -> New repository secret
           GITHUB_TOKEN: ${{ secrets.AIRIG_PUBLISH_TOKEN }}
         run: pnpm exec airig publish "${GITHUB_REF_NAME}"
+
+      - name: Generate changelog
+        run: npx changelogithub
+        env:
+          GITHUB_TOKEN: ${{ secrets.AIRIG_PUBLISH_TOKEN }}
