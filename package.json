@@ -1,6 +1,6 @@
 {
   "name": "@airig/cli",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Distribute and manage AI setups across providers",
   "license": "MIT",
   "type": "module",
