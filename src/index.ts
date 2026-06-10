@@ -5,9 +5,11 @@ import { addCommand } from './commands/add.js'
 import { removeCommand } from './commands/remove.js'
 import { updateCommand } from './commands/update.js'
 import { maybeNotifyForUpdate } from './lib/update-notifier.js'
+import packageJson from '../package.json' with { type: 'json' }
 
 const program = new Command('airig')
   .description('Manage project-scoped AI Setup artifacts')
+  .version(packageJson.version)
 
 program.addCommand(publishCommand)
 program.addCommand(addCommand)
