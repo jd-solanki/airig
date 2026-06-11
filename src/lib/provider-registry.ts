@@ -18,6 +18,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
       { source: '.ai/CLAUDE.md', target: 'CLAUDE.md' },
       { source: '.ai/.claude/agents', target: '.claude/agents' },
       { source: '.ai/.claude/commands', target: '.claude/commands' },
+      { source: '.ai/.claude/hooks', target: '.claude/hooks' },
       { source: '.ai/skills', target: '.claude/skills' },
     ],
   },
