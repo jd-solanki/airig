@@ -127,6 +127,64 @@ describe('runUpdate', () => {
     })
   })
 
+  it('does not add claude skill symlinks when updating a codex-only install', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md', '# old tdd')
+    await makeSymlink('.ai/skills/tdd', '.agents/skills/tdd')
+    await seedAiJson({
+      packages: {
+        'owner/repo': { version: 'v1.0.0', linked: ['skills/tdd'] },
+      },
+    })
+    const zipBuffer = await makeReleaseZip({
+      'skills/tdd/SKILL.md': '# new tdd',
+    })
+    vi.mocked(fetchReleaseInfo).mockResolvedValue({
+      tag: 'v2.0.0',
+      assetDownloadUrl: 'https://example.test/ai.zip',
+      immutable: true,
+    })
+    vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
+
+    await runUpdate('owner/repo@v2.0.0')
+
+    expect((await lstat('.agents/skills/tdd')).isSymbolicLink()).toBe(true)
+    expect(existsSync('.claude/skills/tdd')).toBe(false)
+    expect(await readFile('.ai/skills/tdd/SKILL.md', 'utf-8')).toBe('# new tdd')
+    expect((await readAiJson()).packages['owner/repo']).toEqual({
+      version: 'v2.0.0',
+      linked: ['skills/tdd'],
+    })
+  })
+
+  it('does not add codex skill symlinks when updating a claude-only install', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md', '# old tdd')
+    await makeSymlink('.ai/skills/tdd', '.claude/skills/tdd')
+    await seedAiJson({
+      packages: {
+        'owner/repo': { version: 'v1.0.0', linked: ['skills/tdd'] },
+      },
+    })
+    const zipBuffer = await makeReleaseZip({
+      'skills/tdd/SKILL.md': '# new tdd',
+    })
+    vi.mocked(fetchReleaseInfo).mockResolvedValue({
+      tag: 'v2.0.0',
+      assetDownloadUrl: 'https://example.test/ai.zip',
+      immutable: true,
+    })
+    vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
+
+    await runUpdate('owner/repo@v2.0.0')
+
+    expect((await lstat('.claude/skills/tdd')).isSymbolicLink()).toBe(true)
+    expect(existsSync('.agents/skills/tdd')).toBe(false)
+    expect(await readFile('.ai/skills/tdd/SKILL.md', 'utf-8')).toBe('# new tdd')
+    expect((await readAiJson()).packages['owner/repo']).toEqual({
+      version: 'v2.0.0',
+      linked: ['skills/tdd'],
+    })
+  })
+
   it('errors when the package is not installed', async () => {
     await seedAiJson({ packages: {} })
 
