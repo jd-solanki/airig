@@ -2,9 +2,10 @@ import { Command } from 'commander'
 import { Octokit } from '@octokit/rest'
 import { checkbox } from '@inquirer/prompts'
 import { existsSync } from 'node:fs'
-import { lstat, readlink } from 'node:fs/promises'
+import { lstat, mkdir, readlink, symlink } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
-import { readAiJson, writeAiJson, addPackage, type PackageEntry } from '../lib/ai-json.js'
+import { readAiJson, writeAiJson, addPackage, type AiJson, type PackageEntry } from '../lib/ai-json.js'
 import { fetchReleaseInfo, downloadAsset } from '../lib/github.js'
 import { parsePackageRef } from '../lib/package-ref.js'
 import {
@@ -13,22 +14,68 @@ import {
   withExtractedReleaseAi,
 } from '../lib/setup-release.js'
 import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry.js'
-import { findRemotePackageConflicts, reconcilePackageLinks } from '../lib/linker.js'
+import {
+  findLocalPackageOverrides,
+  findRemotePackageConflicts,
+  pruneLocalPackageOverrides,
+  reconcilePackageLinks,
+  unlinkFiles,
+} from '../lib/linker.js'
 
 interface TargetConflict {
   targetPath: string
   reason: 'real-file' | 'wrong-symlink'
 }
 
-export async function runAdd(pkg: string): Promise<void> {
+interface AddOptions {
+  global?: boolean
+}
+
+interface AddScope {
+  aiJsonPath: string
+  sourceRoot: string
+  targetRoot: string
+  sourcePrefix: string
+}
+
+interface LocalOverridePlan {
+  overrides: ReturnType<typeof findLocalPackageOverrides>
+  targetPaths: Set<string>
+}
+
+function addScope(options: AddOptions = {}): AddScope {
+  if (!options.global) {
+    return {
+      aiJsonPath: path.join('.ai', 'ai.json'),
+      sourceRoot: '.ai',
+      targetRoot: '.',
+      sourcePrefix: '.ai',
+    }
+  }
+
+  const globalRoot = path.join(os.homedir(), '.ai')
+  return {
+    aiJsonPath: path.join(globalRoot, 'ai.json'),
+    sourceRoot: globalRoot,
+    targetRoot: globalRoot,
+    sourcePrefix: globalRoot,
+  }
+}
+
+export async function runAdd(pkg: string, options: AddOptions = {}): Promise<void> {
   if (pkg === '.') {
+    if (options.global) {
+      await runAddGlobalLocal()
+      return
+    }
     await runAddLocal()
     return
   }
 
+  const scope = addScope(options)
   const { owner, repo, tag: inputTag } = parsePackageRef(pkg)
   const packageKey = `${owner}/${repo}`
-  const aiJson = await readAiJson()
+  const aiJson = await readAiJson(scope.aiJsonPath)
   const existingEntry = aiJson.packages[packageKey]
 
   if (existingEntry && inputTag && inputTag !== existingEntry.version) {
@@ -81,39 +128,88 @@ export async function runAdd(pkg: string): Promise<void> {
     }
 
     const artifactsToCopy = await expandReleaseArtifactsWithSymlinkDependencies(extractedAiDir, selectedNew)
+    const localOverridePlan = options.global
+      ? planLocalOverrides(aiJson, packageKey, providers, selectedNew, scope)
+      : emptyLocalOverridePlan()
     assertNoRemoteConflicts(aiJson, packageKey, providers, selectedNew)
-    assertNoSourceConflicts(packageKey, currentLinked, artifactsToCopy)
-    await assertNoTargetConflicts(selectedNew, providers)
+    await assertNoSourceConflicts(packageKey, currentLinked, artifactsToCopy, scope, localOverridePlan.targetPaths)
+    await assertNoTargetConflicts(selectedNew, providers, scope, localOverridePlan.targetPaths)
+    await pruneLocalOverrides(aiJson, scope, localOverridePlan.overrides)
 
-    await copyReleaseArtifactsToLocal(extractedAiDir, selectedNew)
+    await copyReleaseArtifactsToLocal(extractedAiDir, selectedNew, scope.sourceRoot)
 
     const entry: PackageEntry = { version: resolvedTag, linked: [] }
     if (!existingEntry) addPackage(aiJson, packageKey, entry)
 
     const selected = [...new Set([...currentLinked, ...selectedNew])]
-    await reconcilePackageLinks(aiJson, packageKey, providers, selected, selected)
-    await writeAiJson(aiJson)
+    if (options.global) {
+      await reconcileRemoteGlobalPackageLinks(aiJson, packageKey, providers, selected)
+    } else {
+      await reconcilePackageLinks(aiJson, packageKey, providers, selected, selected)
+    }
+    await writeAiJson(aiJson, scope.aiJsonPath)
 
     console.log(`\nAdded ${selectedNew.length} file(s) from ${owner}/${repo}@${resolvedTag}.`)
   })
 }
 
-function assertNoSourceConflicts(
+async function assertNoSourceConflicts(
   packageKey: string,
   currentLinked: string[],
   artifactsToCopy: string[],
-): void {
-  const conflicts = artifactsToCopy
-    .filter(artifact => !currentLinked.includes(artifact))
-    .filter(artifact => existsSync(path.join('.ai', artifact)))
+  scope = addScope(),
+  allowedLocalTargets = new Set<string>(),
+): Promise<void> {
+  const conflicts: string[] = []
+
+  for (const artifact of artifactsToCopy) {
+    if (currentLinked.includes(artifact)) continue
+
+    const sourcePath = path.join(scope.sourceRoot, artifact)
+    if (!existsSync(sourcePath)) continue
+
+    const sourceStat = await lstat(sourcePath)
+    const isAllowedLocalOverride = allowedLocalTargets.has(path.resolve(sourcePath)) && sourceStat.isSymbolicLink()
+    if (!isAllowedLocalOverride) conflicts.push(artifact)
+  }
 
   if (conflicts.length === 0) return
 
   throw new Error(
     `Conflicts detected — ${packageKey} would overwrite existing .ai source files:\n` +
-    conflicts.map(artifact => `  .ai/${artifact}`).join('\n') + '\n' +
+    conflicts.map(artifact => `  ${path.join(scope.sourcePrefix, artifact)}`).join('\n') + '\n' +
     '  Remove the conflicting files, then run add again.',
   )
+}
+
+function emptyLocalOverridePlan(): LocalOverridePlan {
+  return {
+    overrides: [],
+    targetPaths: new Set<string>(),
+  }
+}
+
+function planLocalOverrides(
+  aiJson: AiJson,
+  packageKey: string,
+  providers: string[],
+  artifacts: string[],
+  scope: AddScope,
+): LocalOverridePlan {
+  const overrides = findLocalPackageOverrides(aiJson, packageKey, providers, artifacts)
+  return {
+    overrides,
+    targetPaths: localOverrideTargetPaths(overrides, scope),
+  }
+}
+
+async function pruneLocalOverrides(
+  aiJson: AiJson,
+  scope: AddScope,
+  localOverrides: ReturnType<typeof findLocalPackageOverrides>,
+): Promise<void> {
+  await unlinkFiles(localOverrides.map(({ targetPath }) => path.join(scope.targetRoot, targetPath)))
+  pruneLocalPackageOverrides(aiJson, localOverrides)
 }
 
 async function runAddLocal(): Promise<void> {
@@ -156,6 +252,63 @@ async function runAddLocal(): Promise<void> {
   console.log(`\nAdded ${selectedNew.length} local file(s).`)
 }
 
+async function runAddGlobalLocal(): Promise<void> {
+  const globalRoot = path.join(os.homedir(), '.ai')
+  const sourceRepoRoot = process.cwd()
+  if (path.resolve(sourceRepoRoot) === path.resolve(globalRoot)) {
+    throw new Error('add --global . must be run from a setup repository, not from the Global AI Setup root ~/.ai.')
+  }
+
+  const sourceRoot = path.join(sourceRepoRoot, '.ai')
+  const scope: AddScope = {
+    aiJsonPath: path.join(globalRoot, 'ai.json'),
+    sourceRoot,
+    targetRoot: globalRoot,
+    sourcePrefix: sourceRoot,
+  }
+  const aiJson = await readAiJson(scope.aiJsonPath)
+  const packageKey = path.relative(globalRoot, sourceRepoRoot)
+
+  // Global dogfooding records the source repository root, not its `.ai`
+  // directory, so moving the repo leaves an explicit stale key for remove.
+  // `version: "*"` marks this as a local source regardless of the key text.
+  aiJson.packages[packageKey] ??= { version: '*', linked: [] }
+
+  const providers = await promptProviders()
+  if (providers.length === 0) {
+    console.log('No providers selected.')
+    return
+  }
+
+  const currentLinked = aiJson.packages[packageKey].linked
+  const selectable = (await listArtifacts(sourceRoot, providers))
+    .filter(artifact => {
+      if (!currentLinked.includes(artifact)) return true
+      return targetPathsForArtifact(artifact, providers)
+        .some(targetPath => !existsSync(path.join(scope.targetRoot, targetPath)))
+    })
+  if (selectable.length === 0) {
+    console.log('No new local files found.')
+    return
+  }
+
+  const selectedNew = await checkbox({
+    message: 'Select local files to add:',
+    choices: selectable.map(label => ({ value: label, name: label, checked: true })),
+  })
+  if (selectedNew.length === 0) {
+    console.log('No files selected.')
+    return
+  }
+
+  await assertNoTargetConflicts(selectedNew, providers, scope)
+  const selected = [...new Set([...currentLinked, ...selectedNew])]
+  await reconcileGlobalLocalPackageLinks(aiJson, packageKey, providers, selected, scope)
+  await writeAiJson(aiJson, scope.aiJsonPath)
+
+  console.log(`\nAdded ${selectedNew.length} global local file(s).`)
+}
+
 async function promptProviders(): Promise<string[]> {
   return checkbox({
     message: 'Select providers to add:',
@@ -184,12 +337,23 @@ function assertNoRemoteConflicts(
 async function assertNoTargetConflicts(
   artifacts: string[],
   providers: string[],
+  scope = addScope(),
+  allowedWrongSymlinkTargets = new Set<string>(),
 ): Promise<void> {
   const conflicts: TargetConflict[] = []
 
   for (const artifact of artifacts) {
     for (const targetPath of targetPathsForArtifact(artifact, providers)) {
-      const conflict = await targetConflictFor(artifact, targetPath)
+      const conflict = await targetConflictFor(
+        path.join(scope.sourceRoot, artifact),
+        path.join(scope.targetRoot, targetPath),
+      )
+      if (
+        conflict?.reason === 'wrong-symlink' &&
+        allowedWrongSymlinkTargets.has(path.resolve(conflict.targetPath))
+      ) {
+        continue
+      }
       if (conflict) conflicts.push(conflict)
     }
   }
@@ -206,9 +370,11 @@ async function assertNoTargetConflicts(
 }
 
 async function targetConflictFor(
-  artifact: string,
+  sourcePath: string,
   targetPath: string,
 ): Promise<TargetConflict | undefined> {
+  if (path.resolve(sourcePath) === path.resolve(targetPath)) return undefined
+
   let targetStat: Awaited<ReturnType<typeof lstat>>
   try {
     targetStat = await lstat(targetPath)
@@ -220,17 +386,111 @@ async function targetConflictFor(
 
   const existing = await readlink(targetPath)
   const resolvedExisting = path.resolve(path.dirname(targetPath), existing)
-  const resolvedSource = path.resolve(`.ai/${artifact}`)
+  const resolvedSource = path.resolve(sourcePath)
   if (resolvedExisting === resolvedSource) return undefined
   return { targetPath, reason: 'wrong-symlink' }
+}
+
+async function createScopedSymlink(sourcePath: string, targetPath: string): Promise<void> {
+  if (path.resolve(sourcePath) === path.resolve(targetPath)) return
+
+  await mkdir(path.dirname(targetPath), { recursive: true })
+  const relSource = path.relative(path.dirname(targetPath), sourcePath)
+  await symlink(relSource, targetPath)
+}
+
+async function reconcileRemoteGlobalPackageLinks(
+  aiJson: AiJson,
+  packageKey: string,
+  providers: string[],
+  selectedLabels: string[],
+): Promise<void> {
+  if (!aiJson.packages[packageKey]) {
+    throw new Error(`Package "${packageKey}" is not installed.`)
+  }
+
+  const scope = addScope({ global: true })
+  const selected = [...new Set(selectedLabels)]
+  const conflicts = findRemotePackageConflicts(aiJson, packageKey, providers, selected)
+
+  if (conflicts.length > 0) {
+    throw new Error(
+      `Conflicts detected — the following symlinks are already owned by another package:\n` +
+      conflicts
+        .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
+        .join('\n') + '\n' +
+      '  Remove the conflicting files first with: airig remove',
+    )
+  }
+
+  const localOverridePlan = planLocalOverrides(aiJson, packageKey, providers, selected, scope)
+  await assertNoTargetConflicts(selected, providers, scope, localOverridePlan.targetPaths)
+  await pruneLocalOverrides(aiJson, scope, localOverridePlan.overrides)
+
+  const allowedTargets = new Map<string, string>()
+  for (const artifact of selected) {
+    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
+      allowedTargets.set(
+        path.join(scope.targetRoot, targetPath),
+        path.join(scope.sourceRoot, artifact),
+      )
+    }
+  }
+
+  for (const [targetPath, sourcePath] of allowedTargets) {
+    if (!existsSync(targetPath)) await createScopedSymlink(sourcePath, targetPath)
+  }
+
+  aiJson.packages[packageKey].linked = selected
+}
+
+function localOverrideTargetPaths(
+  localOverrides: ReturnType<typeof findLocalPackageOverrides>,
+  scope: AddScope,
+): Set<string> {
+  return new Set(
+    localOverrides.map(({ targetPath }) => path.resolve(path.join(scope.targetRoot, targetPath))),
+  )
+}
+
+async function reconcileGlobalLocalPackageLinks(
+  aiJson: AiJson,
+  packageKey: string,
+  providers: string[],
+  selectedLabels: string[],
+  scope: AddScope,
+): Promise<void> {
+  if (!aiJson.packages[packageKey]) {
+    throw new Error(`Package "${packageKey}" is not installed.`)
+  }
+
+  const selected = [...new Set(selectedLabels)]
+  await assertNoTargetConflicts(selected, providers, scope)
+
+  const allowedTargets = new Map<string, string>()
+  for (const artifact of selected) {
+    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
+      allowedTargets.set(
+        path.join(scope.targetRoot, targetPath),
+        path.join(scope.sourceRoot, artifact),
+      )
+    }
+  }
+
+  for (const [targetPath, sourcePath] of allowedTargets) {
+    if (!existsSync(targetPath)) await createScopedSymlink(sourcePath, targetPath)
+  }
+
+  aiJson.packages[packageKey].linked = selected
 }
 
 export const addCommand = new Command('add')
   .description('Interactively add active AI Setup artifacts')
   .argument('<package>', 'Package to add, e.g. owner/repo, owner/repo@1.2.0, or .')
-  .action(async (pkg: string) => {
+  .option('--global', 'Install into the user Global AI Setup at ~/.ai')
+  .action(async (pkg: string, options: AddOptions) => {
     try {
-      await runAdd(pkg)
+      await runAdd(pkg, options)
     } catch (err) {
       console.error(`✖ ${(err as Error).message}`)
       process.exit(1)

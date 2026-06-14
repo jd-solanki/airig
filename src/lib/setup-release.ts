@@ -99,13 +99,14 @@ export async function copyReleaseAiToLocal(extractedAiDir: string): Promise<void
 export async function copyReleaseArtifactsToLocal(
   extractedAiDir: string,
   artifacts: string[],
+  targetRoot = '.ai',
 ): Promise<void> {
-  await mkdir('.ai', { recursive: true })
+  await mkdir(targetRoot, { recursive: true })
   const artifactsToCopy = await expandReleaseArtifactsWithSymlinkDependencies(extractedAiDir, artifacts)
 
   for (const artifact of artifactsToCopy) {
     const sourcePath = path.join(extractedAiDir, artifact)
-    const targetPath = path.join('.ai', artifact)
+    const targetPath = path.join(targetRoot, artifact)
     await mkdir(path.dirname(targetPath), { recursive: true })
     await rm(targetPath, { recursive: true, force: true })
     await cp(sourcePath, targetPath, { recursive: true, force: true, verbatimSymlinks: true })

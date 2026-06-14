@@ -260,6 +260,28 @@ describe('reconcilePackageLinks', () => {
     expect(aiJson.packages['.'].linked).toEqual([])
     expect(aiJson.packages['owner/repo'].linked).toEqual(['skills/tdd'])
   })
+
+  it('removes non-dot local ownership when a remote package takes over a local link', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md')
+    const aiJson: AiJson = {
+      packages: {
+        '../setup-repo': { version: '*', linked: ['skills/tdd'] },
+        'owner/repo': { version: '1.0.0', linked: [] },
+      },
+    }
+
+    const result = await reconcilePackageLinks(
+      aiJson,
+      'owner/repo',
+      ['claude'],
+      ['skills/tdd'],
+      ['skills/tdd'],
+    )
+
+    expect(result.localOverrides).toEqual(['.claude/skills/tdd'])
+    expect(aiJson.packages['../setup-repo'].linked).toEqual([])
+    expect(aiJson.packages['owner/repo'].linked).toEqual(['skills/tdd'])
+  })
 })
 
 describe('linkPackageArtifacts', () => {
@@ -324,6 +346,17 @@ describe('findRemotePackageConflicts', () => {
     const conflicts = findRemotePackageConflicts({
       packages: {
         '.': { version: '*', linked: ['skills/tdd'] },
+        'owner/repo': { version: '1.0.0', linked: [] },
+      },
+    }, 'owner/repo', ['claude'], ['skills/tdd'])
+
+    expect(conflicts).toHaveLength(0)
+  })
+
+  it('ignores non-dot local ownership for remote takeovers', () => {
+    const conflicts = findRemotePackageConflicts({
+      packages: {
+        '../setup-repo': { version: '*', linked: ['skills/tdd'] },
         'owner/repo': { version: '1.0.0', linked: [] },
       },
     }, 'owner/repo', ['claude'], ['skills/tdd'])
