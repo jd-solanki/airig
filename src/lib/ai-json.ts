@@ -13,39 +13,39 @@ export interface AiJson {
 
 const AI_JSON_PATH = '.ai/ai.json'
 
-function validate(data: unknown): AiJson {
+function validate(data: unknown, aiJsonPath = AI_JSON_PATH): AiJson {
   if (
     typeof data !== 'object' || data === null ||
     typeof (data as Record<string, unknown>).packages !== 'object' ||
     (data as Record<string, unknown>).packages === null
   ) {
     throw new Error(
-      `${AI_JSON_PATH} is malformed: expected { "packages": {} }\n` +
-      `  Fix: restore the missing top-level keys, or delete ${AI_JSON_PATH} to reset it.`,
+      `${aiJsonPath} is malformed: expected { "packages": {} }\n` +
+      `  Fix: restore the missing top-level keys, or delete ${aiJsonPath} to reset it.`,
     )
   }
 
   const packages: Record<string, PackageEntry> = {}
   for (const [key, rawEntry] of Object.entries((data as { packages: Record<string, unknown> }).packages)) {
     if (typeof rawEntry !== 'object' || rawEntry === null) {
-      throw new Error(`${AI_JSON_PATH} is malformed: package "${key}" must be an object.`)
+      throw new Error(`${aiJsonPath} is malformed: package "${key}" must be an object.`)
     }
 
     const entry = rawEntry as Record<string, unknown>
     if (typeof entry.version !== 'string' || entry.version.length === 0) {
-      throw new Error(`${AI_JSON_PATH} is malformed: package "${key}" must have a version string.`)
+      throw new Error(`${aiJsonPath} is malformed: package "${key}" must have a version string.`)
     }
     if (key === '.' && entry.version !== '*') {
-      throw new Error(`${AI_JSON_PATH} is malformed: local package "." must use version "*".`)
+      throw new Error(`${aiJsonPath} is malformed: local package "." must use version "*".`)
     }
     if (key !== '.' && entry.version === '*') {
-      throw new Error(`${AI_JSON_PATH} is malformed: remote package "${key}" must use an exact version.`)
+      throw new Error(`${aiJsonPath} is malformed: remote package "${key}" must use an exact version.`)
     }
     if (entry.linked !== undefined && (
       !Array.isArray(entry.linked) ||
       entry.linked.some(label => typeof label !== 'string' || label.length === 0)
     )) {
-      throw new Error(`${AI_JSON_PATH} is malformed: package "${key}" linked must be a string array.`)
+      throw new Error(`${aiJsonPath} is malformed: package "${key}" linked must be a string array.`)
     }
 
     packages[key] = {
@@ -57,17 +57,17 @@ function validate(data: unknown): AiJson {
   return { packages }
 }
 
-export async function readAiJson(): Promise<AiJson> {
-  if (!existsSync(AI_JSON_PATH)) {
+export async function readAiJson(aiJsonPath = AI_JSON_PATH): Promise<AiJson> {
+  if (!existsSync(aiJsonPath)) {
     return { packages: {} }
   }
-  const raw = await readFile(AI_JSON_PATH, 'utf-8')
-  return validate(JSON.parse(raw))
+  const raw = await readFile(aiJsonPath, 'utf-8')
+  return validate(JSON.parse(raw), aiJsonPath)
 }
 
-export async function writeAiJson(data: AiJson): Promise<void> {
-  await mkdir(path.dirname(AI_JSON_PATH), { recursive: true })
-  await writeFile(AI_JSON_PATH, JSON.stringify(data, null, 2) + '\n', 'utf-8')
+export async function writeAiJson(data: AiJson, aiJsonPath = AI_JSON_PATH): Promise<void> {
+  await mkdir(path.dirname(aiJsonPath), { recursive: true })
+  await writeFile(aiJsonPath, JSON.stringify(data, null, 2) + '\n', 'utf-8')
 }
 
 export async function updateAiJson(fn: (data: AiJson) => Promise<void> | void): Promise<void> {
