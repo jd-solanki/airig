@@ -22,7 +22,17 @@ The person who downloads an Author's Setup Release and uses it in their own repo
 
 ### AI Setup
 
-The complete collection of AI configuration artifacts for one or more providers — project instruction files, skills, agents, custom commands, hooks. Stored in the `.ai/` directory and distributed as a Setup Release when published.
+The complete collection of AI configuration artifacts for one or more providers — project instruction files, skills, agents, custom commands, hooks. An AI Setup can be project-scoped or global-scoped.
+
+### Project AI Setup
+
+An AI Setup that belongs to a repository. It is kept in the repository's `.ai/` directory and can be distributed as a Setup Release when published.
+
+### Global AI Setup
+
+An AI Setup that belongs to a User rather than a repository. It is kept in the User's home-level `~/.ai/` directory and represents personal AI configuration shared across repositories on that machine.
+
+Global scope uses the User's home-level `~/.ai/` directory as the target AI Setup root. The same provider artifact layout and target-path rules apply; only the target AI Setup root changes from the current repository directory to `~/.ai/`.
 
 ### Project Instruction File
 
@@ -46,7 +56,7 @@ An AI coding agent/tool that consumes the setup artifacts. Examples: `claude`, `
 
 ### `.ai/` Directory
 
-The committed directory at the repo root that holds project-scoped AI Setup content, organized by provider:
+The directory that holds AI Setup content for a scope. Project AI Setups use a repo-root `.ai/` directory; Global AI Setups use the User's `~/.ai/` directory.
 
 ```
 .ai/
@@ -85,13 +95,15 @@ The single manifest file for project scope. Lives at `.ai/ai.json`. Declares whi
 }
 ```
 
-Manifest keys are either `"owner/repo"` (remote Setup Release) or `"."` (local AI Setup — the Author's own `.ai/` directory, written by `add .`). The `"."` key uses `version: "*"` as a sentinel meaning "always current, no pinning." Both local and remote entries use the same `linked` list of source artifact labels — `.ai/`-relative artifacts that are installed and wired into provider target paths.
+Manifest keys are either `"owner/repo"` (remote Setup Release) or a local setup root. Project `add .` uses `"."` as the local setup root because the source root and target root are the same repository. Global `add --global .` uses the relative path from `~/.ai/` to the current working repository root because the source root and target root are different. Local setup roots use `version: "*"` as a sentinel meaning "always current, no pinning." Both local and remote entries use the same `linked` list of source artifact labels — `.ai/`-relative artifacts that are installed and wired into provider target paths.
 
-**Versions are always exact** for remote Setup Releases — no semver ranges. The CLI pins the exact version on `add` and only moves it on an explicit `update` command. `"*"` is only valid for the `"."` local AI Setup.
+**Versions are always exact** for remote Setup Releases — no semver ranges. The CLI pins the exact version on `add` and only moves it on an explicit `update` command. `"*"` is only valid for local setup roots.
 
 Immutability is always verified online via the GitHub API — on every `add` and `update`. No offline attestation cache.
 
 The `linked` list is written by the CLI after interactive selection during `add` and `remove`. For remote Setup Releases, `.ai/` contains only selected active artifacts, plus any relative symlink dependency required to preserve an Author-provided setup symlink such as `CLAUDE.md -> AGENTS.md`. There is no downloaded-but-inactive remote cache.
+
+In global scope, remote Setup Release artifacts are copied into `~/.ai/` just as project-scope remote artifacts are copied into the repo-root `.ai/`. The symlink-to-source behavior is only for local dogfooding with `add --global .`.
 
 ### Interactive Selection
 
@@ -99,11 +111,21 @@ The CLI prompt that lets Users pick which artifact subdirectories and individual
 
 ### Command Interaction Model
 
-`add` is the public activation command. For a remote Setup Release, it verifies immutability, extracts the release into a temp directory, prompts for providers first and artifacts second, checks conflicts before writing, copies only selected artifacts into `.ai/`, creates target symlinks, and writes the package `linked` list. If that Setup Release is already installed, `add owner/repo` fetches the currently pinned version and lets the User add more artifacts without moving versions; `add owner/repo@new-version` errors and points to `update`. `add .` is the local Author dogfooding flow: it prompts over existing `.ai/` artifacts and wires selected local artifacts without network access.
+`add` is the public activation command. For a remote Setup Release, it verifies immutability, extracts the release into a temp directory, prompts for providers first and artifacts second, checks conflicts before writing, copies only selected artifacts into `.ai/`, creates target symlinks, and writes the package `linked` list. If that Setup Release is already installed, `add owner/repo` fetches the currently pinned version and lets the User add more artifacts without moving versions; `add owner/repo@new-version` errors and points to `update`. `add .` is the local Author dogfooding flow: it prompts over the current working `.ai/` artifacts and wires selected local artifacts without network access. With `--global`, the local source remains the current working `.ai/`; the target AI Setup root changes to `~/.ai/`.
 
-`update` is explicit and non-interactive. It requires `owner/repo@version`, verifies immutability, refreshes only artifacts currently listed in that package's `linked` list, prunes artifacts deleted upstream, unlinks their target symlinks, and ignores newly-added upstream artifacts until the User runs `add owner/repo`.
+`add`, `update`, and `remove` accept a subcommand-level `--global` option that changes the selected scope from the current repository to the User's `~/.ai/` directory. `publish` does not accept `--global`; publishing is a project Author workflow.
 
-`remove` is interactive. It shows active artifacts grouped by package and artifact category, then removes selected target symlinks and prunes selected labels from `linked`. For remote Setup Releases, it also deletes the selected `.ai/` source artifacts. For the local `"."` package, it preserves `.ai/` source files because they are the Author's working setup.
+Project scope and global scope are isolated. Each scope reads and writes only its own `ai.json`, source artifacts, target symlinks, and ownership state; installing the same Setup Release in both scopes is valid and does not create a cross-scope conflict.
+
+`update` is explicit, non-interactive, and remote-only. It requires `owner/repo@version`, verifies immutability, refreshes only artifacts currently listed in that package's `linked` list, prunes artifacts deleted upstream, unlinks their target symlinks, and ignores newly-added upstream artifacts until the User runs `add owner/repo`. Local setup roots use `add` instead of `update`; their source files are already current, and `add` is the command for activating more local artifacts.
+
+`remove` is interactive. It shows active artifacts grouped by package and artifact category, then removes selected target symlinks and prunes selected labels from `linked`. For remote Setup Releases, it also deletes the selected `.ai/` source artifacts. For local setup roots, identified by `version: "*"`, it preserves the Author's source files and only removes target-scope symlinks and manifest state.
+
+When removing a specific package, the package argument is matched exactly against the selected scope's `ai.json` key. Global local dogfooding entries therefore use their stored relative source-root key, not `"."` aliases.
+
+Global local dogfooding keys are not automatically migrated when an Author moves a source repository. Running `add --global .` from a new source path creates or updates the key for that path; stale keys are removed explicitly by their stored package key.
+
+`add --global .` is invalid when run from the global target AI Setup root itself. Global local dogfooding needs a separate current working source repository so the global manifest can record a source-root package key that is not `"."`.
 
 There is no global-scope behavior in the MVP. The command surface is limited to `add`, `update`, `remove`, and `publish`; public `link`, `check`, `sync`, and `list` are out of scope.
 
@@ -119,6 +141,8 @@ The act of selecting AI Setup artifacts and making them active in the current re
 
 A target path that cannot be linked because it is already claimed or occupied. Conflicts between remote Setup Releases block the operation before `.ai/` files or target symlinks are written. Existing real files or symlinks pointing somewhere else also block `add`; the User must remove or move the conflicting file before retrying.
 _Avoid_: Overwrite, last-write-wins
+
+Local setup roots are identified by `version: "*"`, not by a specific package key. Within one scope, remote Setup Releases may override local dogfooding links and prune the affected local `linked` entries; remote Setup Releases still conflict with other remote Setup Releases.
 
 ### Provider Registry
 
@@ -167,9 +191,13 @@ airig add .                         # interactively link selected local Author a
 airig update <owner/repo>@<version> # refresh currently linked artifacts at an exact immutable version
 airig remove [owner/repo|.]         # interactively remove active artifacts
 airig publish [tag]                 # publish project .ai artifacts as immutable ai.zip
+airig add --global <owner/repo>[@version]
+airig add --global .
+airig update --global <owner/repo>@<version>
+airig remove --global [owner/repo|stored-local-key]
 ```
 
-Public `link`, `check`, `sync`, `list`, and global scope are post-MVP.
+Public `link`, `check`, `sync`, and `list` are post-MVP.
 
 ---
 
@@ -183,7 +211,7 @@ Pushed `v*` tags trigger the `Publish Package` GitHub Actions workflow. The work
 
 ### Setup Release
 
-Authors run `airig publish [tag]` to publish a Setup Release. This command zips `.ai/` into an immutable GitHub release asset named `ai.zip`; it does not publish the npm Package.
+Authors run `airig publish [tag]` to publish a Setup Release. This command zips the current project's `.ai/` into an immutable GitHub release asset named `ai.zip`; it does not publish the npm Package. Global AI Setups are shared by publishing the source setup repository, not by publishing `~/.ai/` directly.
 
 ---
 
