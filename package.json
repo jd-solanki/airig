@@ -12,7 +12,7 @@
     "url": "https://github.com/jd-solanki/airig/issues"
   },
   "homepage": "https://github.com/jd-solanki/airig#readme",
-  "packageManager": "pnpm@10.19.0",
+  "packageManager": "pnpm@11.6.0",
   "engines": {
     "node": "^24.11.0"
   },
@@ -32,8 +32,8 @@
     "release": "bumpp",
     "test": "vitest run",
     "test:watch": "vitest",
-    "pkg:link": "pnpm link --global",
-    "pkg:unlink": "pnpm unlink --global airig"
+    "pkg:link": "pnpm add -g .",
+    "pkg:unlink": "pnpm remove -g airig"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.5.2",
