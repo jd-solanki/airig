@@ -563,6 +563,47 @@ describe('runAdd', () => {
     })
   })
 
+  it('lets a global remote release replace a self-target global local link', async () => {
+    const sourceRepo = path.join(tmpDir, 'setup-repo')
+    const packageKey = path.relative(globalRoot, sourceRepo)
+    await makeFile(path.join(sourceRepo, '.ai/AGENTS.md'), '# Local Agents')
+    await mkdir(globalRoot, { recursive: true })
+    await symlink(
+      path.relative(globalRoot, path.join(sourceRepo, '.ai/AGENTS.md')),
+      path.join(globalRoot, 'AGENTS.md'),
+    )
+    await writeAiJson({
+      packages: {
+        [packageKey]: { version: '*', linked: ['AGENTS.md'] },
+      },
+    }, globalAiJsonPath())
+    const zipBuffer = await makeReleaseZip()
+    vi.mocked(fetchReleaseInfo).mockResolvedValue({
+      tag: 'v1.2.3',
+      assetDownloadUrl: 'https://example.test/ai.zip',
+      immutable: true,
+    })
+    vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['codex']
+      if (message === 'Select files to add:') return ['AGENTS.md']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await runAdd('owner/repo', { global: true })
+
+    expect((await lstat(path.join(globalRoot, 'AGENTS.md'))).isSymbolicLink()).toBe(false)
+    expect(await readFile(path.join(globalRoot, 'AGENTS.md'), 'utf-8')).toBe('# Shared instructions')
+    expect(await readFile(path.join(sourceRepo, '.ai/AGENTS.md'), 'utf-8')).toBe('# Local Agents')
+    const aiJson = await readAiJson(globalAiJsonPath())
+    expect(aiJson.packages[packageKey]).toEqual({ version: '*', linked: [] })
+    expect(aiJson.packages['owner/repo']).toEqual({
+      version: 'v1.2.3',
+      linked: ['AGENTS.md'],
+    })
+  })
+
   it('dogfoods local setup artifacts into the global setup with a relative source-root key', async () => {
     const sourceRepo = path.join(tmpDir, 'setup-repo')
     await mkdir(sourceRepo, { recursive: true })

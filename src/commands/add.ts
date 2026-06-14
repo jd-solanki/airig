@@ -123,12 +123,17 @@ export async function runAdd(pkg: string, options: AddOptions = {}): Promise<voi
     }
 
     const artifactsToCopy = await expandReleaseArtifactsWithSymlinkDependencies(extractedAiDir, selectedNew)
-    assertNoRemoteConflicts(aiJson, packageKey, providers, selectedNew)
-    assertNoSourceConflicts(packageKey, currentLinked, artifactsToCopy, scope)
+    const localOverrides = options.global
+      ? findLocalPackageOverrides(aiJson, packageKey, providers, selectedNew)
+      : []
     const allowedLocalTargets = options.global
-      ? localOverrideTargetPaths(aiJson, packageKey, providers, selectedNew, scope)
-      : undefined
+      ? localOverrideTargetPaths(localOverrides, scope)
+      : new Set<string>()
+    assertNoRemoteConflicts(aiJson, packageKey, providers, selectedNew)
+    await assertNoSourceConflicts(packageKey, currentLinked, artifactsToCopy, scope, allowedLocalTargets)
     await assertNoTargetConflicts(selectedNew, providers, scope, allowedLocalTargets)
+    await unlinkFiles(localOverrides.map(({ targetPath }) => path.join(scope.targetRoot, targetPath)))
+    pruneLocalPackageOverrides(aiJson, localOverrides)
 
     await copyReleaseArtifactsToLocal(extractedAiDir, selectedNew, scope.sourceRoot)
 
@@ -147,15 +152,25 @@ export async function runAdd(pkg: string, options: AddOptions = {}): Promise<voi
   })
 }
 
-function assertNoSourceConflicts(
+async function assertNoSourceConflicts(
   packageKey: string,
   currentLinked: string[],
   artifactsToCopy: string[],
   scope = addScope(),
-): void {
-  const conflicts = artifactsToCopy
-    .filter(artifact => !currentLinked.includes(artifact))
-    .filter(artifact => existsSync(path.join(scope.sourceRoot, artifact)))
+  allowedLocalTargets = new Set<string>(),
+): Promise<void> {
+  const conflicts: string[] = []
+
+  for (const artifact of artifactsToCopy) {
+    if (currentLinked.includes(artifact)) continue
+
+    const sourcePath = path.join(scope.sourceRoot, artifact)
+    if (!existsSync(sourcePath)) continue
+
+    const sourceStat = await lstat(sourcePath)
+    const isAllowedLocalOverride = allowedLocalTargets.has(path.resolve(sourcePath)) && sourceStat.isSymbolicLink()
+    if (!isAllowedLocalOverride) conflicts.push(artifact)
+  }
 
   if (conflicts.length === 0) return
 
@@ -378,7 +393,7 @@ async function reconcileRemoteGlobalPackageLinks(
   }
 
   const localOverrides = findLocalPackageOverrides(aiJson, packageKey, providers, selected)
-  const localOverrideTargets = localOverrideTargetPaths(aiJson, packageKey, providers, selected, scope)
+  const localOverrideTargets = localOverrideTargetPaths(localOverrides, scope)
   await assertNoTargetConflicts(selected, providers, scope, localOverrideTargets)
   await unlinkFiles(localOverrides.map(({ targetPath }) => path.join(scope.targetRoot, targetPath)))
   pruneLocalPackageOverrides(aiJson, localOverrides)
@@ -401,15 +416,11 @@ async function reconcileRemoteGlobalPackageLinks(
 }
 
 function localOverrideTargetPaths(
-  aiJson: AiJson,
-  packageKey: string,
-  providers: string[],
-  artifacts: string[],
+  localOverrides: ReturnType<typeof findLocalPackageOverrides>,
   scope: AddScope,
 ): Set<string> {
   return new Set(
-    findLocalPackageOverrides(aiJson, packageKey, providers, artifacts)
-      .map(({ targetPath }) => path.resolve(path.join(scope.targetRoot, targetPath))),
+    localOverrides.map(({ targetPath }) => path.resolve(path.join(scope.targetRoot, targetPath))),
   )
 }
 
