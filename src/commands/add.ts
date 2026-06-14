@@ -14,7 +14,13 @@ import {
   withExtractedReleaseAi,
 } from '../lib/setup-release.js'
 import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry.js'
-import { findRemotePackageConflicts, reconcilePackageLinks } from '../lib/linker.js'
+import {
+  findLocalPackageOverrides,
+  findRemotePackageConflicts,
+  pruneLocalPackageOverrides,
+  reconcilePackageLinks,
+  unlinkFiles,
+} from '../lib/linker.js'
 
 interface TargetConflict {
   targetPath: string
@@ -119,7 +125,10 @@ export async function runAdd(pkg: string, options: AddOptions = {}): Promise<voi
     const artifactsToCopy = await expandReleaseArtifactsWithSymlinkDependencies(extractedAiDir, selectedNew)
     assertNoRemoteConflicts(aiJson, packageKey, providers, selectedNew)
     assertNoSourceConflicts(packageKey, currentLinked, artifactsToCopy, scope)
-    await assertNoTargetConflicts(selectedNew, providers, scope)
+    const allowedLocalTargets = options.global
+      ? localOverrideTargetPaths(aiJson, packageKey, providers, selectedNew, scope)
+      : undefined
+    await assertNoTargetConflicts(selectedNew, providers, scope, allowedLocalTargets)
 
     await copyReleaseArtifactsToLocal(extractedAiDir, selectedNew, scope.sourceRoot)
 
@@ -283,6 +292,7 @@ async function assertNoTargetConflicts(
   artifacts: string[],
   providers: string[],
   scope = addScope(),
+  allowedWrongSymlinkTargets = new Set<string>(),
 ): Promise<void> {
   const conflicts: TargetConflict[] = []
 
@@ -292,6 +302,12 @@ async function assertNoTargetConflicts(
         path.join(scope.sourceRoot, artifact),
         path.join(scope.targetRoot, targetPath),
       )
+      if (
+        conflict?.reason === 'wrong-symlink' &&
+        allowedWrongSymlinkTargets.has(path.resolve(conflict.targetPath))
+      ) {
+        continue
+      }
       if (conflict) conflicts.push(conflict)
     }
   }
@@ -361,7 +377,11 @@ async function reconcileRemoteGlobalPackageLinks(
     )
   }
 
-  await assertNoTargetConflicts(selected, providers, scope)
+  const localOverrides = findLocalPackageOverrides(aiJson, packageKey, providers, selected)
+  const localOverrideTargets = localOverrideTargetPaths(aiJson, packageKey, providers, selected, scope)
+  await assertNoTargetConflicts(selected, providers, scope, localOverrideTargets)
+  await unlinkFiles(localOverrides.map(({ targetPath }) => path.join(scope.targetRoot, targetPath)))
+  pruneLocalPackageOverrides(aiJson, localOverrides)
 
   const allowedTargets = new Map<string, string>()
   for (const artifact of selected) {
@@ -378,6 +398,19 @@ async function reconcileRemoteGlobalPackageLinks(
   }
 
   aiJson.packages[packageKey].linked = selected
+}
+
+function localOverrideTargetPaths(
+  aiJson: AiJson,
+  packageKey: string,
+  providers: string[],
+  artifacts: string[],
+  scope: AddScope,
+): Set<string> {
+  return new Set(
+    findLocalPackageOverrides(aiJson, packageKey, providers, artifacts)
+      .map(({ targetPath }) => path.resolve(path.join(scope.targetRoot, targetPath))),
+  )
 }
 
 async function reconcileGlobalLocalPackageLinks(

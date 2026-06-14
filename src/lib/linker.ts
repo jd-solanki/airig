@@ -42,6 +42,10 @@ interface TargetConflict {
   reason: 'real-file' | 'wrong-symlink'
 }
 
+function isLocalPackage(version: string | undefined): boolean {
+  return version === '*'
+}
+
 export function deriveTargetOwnership(aiJson: AiJson): Map<string, OwnedTarget[]> {
   const ownership = new Map<string, OwnedTarget[]>()
 
@@ -202,14 +206,54 @@ export function findRemotePackageConflicts(
   for (const artifact of artifactLabels) {
     for (const targetPath of targetPathsForArtifact(artifact, providers)) {
       for (const owner of ownership.get(targetPath) ?? []) {
-        if (owner.packageKey === packageKey || owner.packageKey === '.') continue
-        if (packageKey === '.') continue
+        if (owner.packageKey === packageKey) continue
+        if (isLocalPackage(aiJson.packages[packageKey]?.version)) continue
+        if (isLocalPackage(owner.version)) continue
         conflicts.push({ targetPath, owner })
       }
     }
   }
 
   return conflicts
+}
+
+export function findLocalPackageOverrides(
+  aiJson: AiJson,
+  packageKey: string,
+  providers: string[],
+  artifactLabels: string[],
+): PackageConflict[] {
+  const ownership = deriveTargetOwnership(aiJson)
+  const overrides: PackageConflict[] = []
+
+  if (isLocalPackage(aiJson.packages[packageKey]?.version)) return overrides
+
+  for (const artifact of artifactLabels) {
+    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
+      for (const owner of ownership.get(targetPath) ?? []) {
+        if (owner.packageKey === packageKey) continue
+        if (isLocalPackage(owner.version)) overrides.push({ targetPath, owner })
+      }
+    }
+  }
+
+  return overrides
+}
+
+export function pruneLocalPackageOverrides(aiJson: AiJson, overrides: PackageConflict[]): void {
+  const artifactsByPackage = new Map<string, Set<string>>()
+
+  for (const { owner } of overrides) {
+    const artifacts = artifactsByPackage.get(owner.packageKey) ?? new Set<string>()
+    artifacts.add(owner.artifact)
+    artifactsByPackage.set(owner.packageKey, artifacts)
+  }
+
+  for (const [packageKey, artifacts] of artifactsByPackage) {
+    const entry = aiJson.packages[packageKey]
+    if (!entry || !isLocalPackage(entry.version)) continue
+    entry.linked = entry.linked.filter(artifact => !artifacts.has(artifact))
+  }
 }
 
 export async function reconcilePackageLinks(
@@ -255,25 +299,8 @@ export async function reconcilePackageLinks(
 
   await unlinkFiles([...targetPathsToUnlink])
 
-  const localOverrides = new Set<string>()
-  const localOverrideArtifacts = new Set<string>()
-  if (packageKey !== '.') {
-    for (const artifact of selected) {
-      for (const targetPath of targetPathsForArtifact(artifact, providers)) {
-        for (const owner of ownership.get(targetPath) ?? []) {
-          if (owner.packageKey === '.') {
-            localOverrides.add(targetPath)
-            localOverrideArtifacts.add(owner.artifact)
-          }
-        }
-      }
-    }
-  }
-
-  if (localOverrideArtifacts.size > 0 && aiJson.packages['.']) {
-    aiJson.packages['.'].linked = aiJson.packages['.'].linked
-      .filter(artifact => !localOverrideArtifacts.has(artifact))
-  }
+  const localOverrides = findLocalPackageOverrides(aiJson, packageKey, providers, selected)
+  pruneLocalPackageOverrides(aiJson, localOverrides)
 
   const { linked, skipped } = await linkPackageArtifacts(providers, selected)
   assertNoBlockingSkips(skipped)
@@ -283,7 +310,7 @@ export async function reconcilePackageLinks(
     linked,
     skipped,
     unlinked: [...targetPathsToUnlink],
-    localOverrides: [...localOverrides],
+    localOverrides: localOverrides.map(({ targetPath }) => targetPath),
   }
 }
 

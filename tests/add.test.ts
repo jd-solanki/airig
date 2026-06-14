@@ -484,6 +484,85 @@ describe('runAdd', () => {
     })
   })
 
+  it('keeps project ownership from blocking global target ownership checks', async () => {
+    await makeFile('.ai/skills/tdd/SKILL.md', '# Project TDD')
+    await writeAiJson({
+      packages: {
+        'owner/other': { version: 'v1.0.0', linked: ['skills/tdd'] },
+      },
+    })
+    const zipBuffer = await makeReleaseZip()
+    vi.mocked(fetchReleaseInfo).mockResolvedValue({
+      tag: 'v1.2.3',
+      assetDownloadUrl: 'https://example.test/ai.zip',
+      immutable: true,
+    })
+    vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['claude']
+      if (message === 'Select files to add:') return ['skills/tdd']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await runAdd('owner/repo', { global: true })
+
+    expect(await readAiJson()).toEqual({
+      packages: {
+        'owner/other': { version: 'v1.0.0', linked: ['skills/tdd'] },
+      },
+    })
+    expect(await readAiJson(globalAiJsonPath())).toEqual({
+      packages: {
+        'owner/repo': { version: 'v1.2.3', linked: ['skills/tdd'] },
+      },
+    })
+  })
+
+  it('lets a global remote release override and prune a non-dot global local link', async () => {
+    const sourceRepo = path.join(tmpDir, 'setup-repo')
+    const packageKey = path.relative(globalRoot, sourceRepo)
+    await makeFile(path.join(sourceRepo, '.ai/skills/tdd/SKILL.md'), '# Local TDD')
+    await mkdir(path.join(globalRoot, '.claude/skills'), { recursive: true })
+    await symlink(
+      path.relative(
+        path.join(globalRoot, '.claude/skills'),
+        path.join(sourceRepo, '.ai/skills/tdd'),
+      ),
+      path.join(globalRoot, '.claude/skills/tdd'),
+    )
+    await writeAiJson({
+      packages: {
+        [packageKey]: { version: '*', linked: ['skills/tdd'] },
+      },
+    }, globalAiJsonPath())
+    const zipBuffer = await makeReleaseZip()
+    vi.mocked(fetchReleaseInfo).mockResolvedValue({
+      tag: 'v1.2.3',
+      assetDownloadUrl: 'https://example.test/ai.zip',
+      immutable: true,
+    })
+    vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['claude']
+      if (message === 'Select files to add:') return ['skills/tdd']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await runAdd('owner/repo', { global: true })
+
+    expect(await readlink(path.join(globalRoot, '.claude/skills/tdd'))).toBe('../../skills/tdd')
+    expect(existsSync(path.join(sourceRepo, '.ai/skills/tdd/SKILL.md'))).toBe(true)
+    expect(existsSync(path.join(globalRoot, 'skills/tdd/SKILL.md'))).toBe(true)
+    const aiJson = await readAiJson(globalAiJsonPath())
+    expect(aiJson.packages[packageKey]).toEqual({ version: '*', linked: [] })
+    expect(aiJson.packages['owner/repo']).toEqual({
+      version: 'v1.2.3',
+      linked: ['skills/tdd'],
+    })
+  })
+
   it('dogfoods local setup artifacts into the global setup with a relative source-root key', async () => {
     const sourceRepo = path.join(tmpDir, 'setup-repo')
     await mkdir(sourceRepo, { recursive: true })
