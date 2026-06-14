@@ -12,15 +12,20 @@ import { readAiJson, writeAiJson, type AiJson } from '../src/lib/ai-json.js'
 
 let tmpDir: string
 let originalCwd: string
+let globalRoot: string
 
 beforeEach(async () => {
   originalCwd = process.cwd()
   tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-remove-test-'))
+  globalRoot = path.join(tmpDir, 'home', '.ai')
   process.chdir(tmpDir)
   vi.resetAllMocks()
+  vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmpDir, 'home'))
+  vi.spyOn(console, 'log').mockImplementation(() => {})
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   process.chdir(originalCwd)
   await rm(tmpDir, { recursive: true, force: true })
 })
@@ -35,8 +40,12 @@ async function makeSymlink(sourcePath: string, linkPath: string) {
   await symlink(path.resolve(sourcePath), linkPath)
 }
 
-async function seedAiJson(data: AiJson) {
-  await writeAiJson(data)
+async function seedAiJson(data: AiJson, aiJsonPath?: string) {
+  await writeAiJson(data, aiJsonPath)
+}
+
+function globalAiJsonPath(): string {
+  return path.join(globalRoot, 'ai.json')
 }
 
 describe('error handling', () => {
@@ -142,5 +151,94 @@ describe('local package (.)', () => {
       version: '*',
       linked: ['.claude/agents/reviewer.md'],
     })
+  })
+})
+
+describe('global removal', () => {
+  it('removes selected remote global symlinks and source files from ~/.ai', async () => {
+    await makeFile(path.join(globalRoot, 'skills/tdd/SKILL.md'))
+    await makeFile(path.join(globalRoot, 'skills/coding/SKILL.md'))
+    await makeSymlink(path.join(globalRoot, 'skills/tdd'), path.join(globalRoot, '.agents/skills/tdd'))
+    await makeSymlink(path.join(globalRoot, 'skills/coding'), path.join(globalRoot, '.agents/skills/coding'))
+    await seedAiJson({
+      packages: {
+        'owner/repo': { version: 'v1.0.0', linked: ['skills/tdd', 'skills/coding'] },
+      },
+    }, globalAiJsonPath())
+    vi.mocked(checkbox).mockResolvedValue([
+      { packageKey: 'owner/repo', artifact: 'skills/tdd' },
+    ])
+
+    await runRemove(undefined, { global: true })
+
+    expect(existsSync(path.join(globalRoot, '.agents/skills/tdd'))).toBe(false)
+    expect(existsSync(path.join(globalRoot, '.agents/skills/coding'))).toBe(true)
+    expect(existsSync(path.join(globalRoot, 'skills/tdd'))).toBe(false)
+    expect(existsSync(path.join(globalRoot, 'skills/coding'))).toBe(true)
+    expect(existsSync('.ai/ai.json')).toBe(false)
+    expect(await readAiJson(globalAiJsonPath())).toEqual({
+      packages: {
+        'owner/repo': { version: 'v1.0.0', linked: ['skills/coding'] },
+      },
+    })
+  })
+
+  it('removes selected local dogfooding symlinks while preserving source repository files', async () => {
+    const sourceRepo = path.join(tmpDir, 'setup-repo')
+    const packageKey = path.relative(globalRoot, sourceRepo)
+    await makeFile(path.join(sourceRepo, '.ai/skills/tdd/SKILL.md'))
+    await makeFile(path.join(sourceRepo, '.ai/skills/coding/SKILL.md'))
+    await makeSymlink(path.join(sourceRepo, '.ai/skills/tdd'), path.join(globalRoot, '.agents/skills/tdd'))
+    await makeSymlink(path.join(sourceRepo, '.ai/skills/coding'), path.join(globalRoot, '.agents/skills/coding'))
+    await seedAiJson({
+      packages: {
+        [packageKey]: { version: '*', linked: ['skills/tdd', 'skills/coding'] },
+      },
+    }, globalAiJsonPath())
+    vi.mocked(checkbox).mockResolvedValue([
+      { packageKey, artifact: 'skills/tdd' },
+    ])
+
+    await runRemove(packageKey, { global: true })
+
+    expect(existsSync(path.join(globalRoot, '.agents/skills/tdd'))).toBe(false)
+    expect(existsSync(path.join(globalRoot, '.agents/skills/coding'))).toBe(true)
+    expect(existsSync(path.join(sourceRepo, '.ai/skills/tdd/SKILL.md'))).toBe(true)
+    expect(existsSync(path.join(sourceRepo, '.ai/skills/coding/SKILL.md'))).toBe(true)
+    expect(await readAiJson(globalAiJsonPath())).toEqual({
+      packages: {
+        [packageKey]: { version: '*', linked: ['skills/coding'] },
+      },
+    })
+  })
+
+  it('matches global package arguments exactly without treating "." as a local-key alias', async () => {
+    const sourceRepo = path.join(tmpDir, 'setup-repo')
+    const packageKey = path.relative(globalRoot, sourceRepo)
+    await seedAiJson({
+      packages: {
+        [packageKey]: { version: '*', linked: ['skills/tdd'] },
+      },
+    }, globalAiJsonPath())
+
+    await expect(runRemove('.', { global: true })).rejects.toThrow('Package "." is not installed')
+
+    expect(await readAiJson(globalAiJsonPath())).toEqual({
+      packages: {
+        [packageKey]: { version: '*', linked: ['skills/tdd'] },
+      },
+    })
+  })
+
+  it('cleans up empty global package entries', async () => {
+    await seedAiJson({
+      packages: {
+        'owner/repo': { version: 'v1.0.0', linked: [] },
+      },
+    }, globalAiJsonPath())
+
+    await runRemove('owner/repo', { global: true })
+
+    expect(await readAiJson(globalAiJsonPath())).toEqual({ packages: {} })
   })
 })

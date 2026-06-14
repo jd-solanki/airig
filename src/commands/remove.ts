@@ -1,17 +1,50 @@
 import { Command } from 'commander'
 import { checkbox } from '@inquirer/prompts'
 import { rm } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import { readAiJson, writeAiJson, removePackage } from '../lib/ai-json.js'
 import { targetPathsForArtifact } from '../lib/provider-registry.js'
 import { unlinkFiles } from '../lib/linker.js'
+
+interface RemoveOptions {
+  global?: boolean
+}
+
+interface RemoveScope {
+  aiJsonPath: string
+  sourceRoot: string
+  targetRoot: string
+  manifestLabel: string
+}
 
 interface RemoveChoice {
   packageKey: string
   artifact: string
 }
 
-export async function runRemove(pkg?: string): Promise<void> {
-  const aiJson = await readAiJson()
+function removeScope(options: RemoveOptions = {}): RemoveScope {
+  if (!options.global) {
+    return {
+      aiJsonPath: path.join('.ai', 'ai.json'),
+      sourceRoot: '.ai',
+      targetRoot: '.',
+      manifestLabel: '.ai/ai.json',
+    }
+  }
+
+  const globalRoot = path.join(os.homedir(), '.ai')
+  return {
+    aiJsonPath: path.join(globalRoot, 'ai.json'),
+    sourceRoot: globalRoot,
+    targetRoot: globalRoot,
+    manifestLabel: '~/.ai/ai.json',
+  }
+}
+
+export async function runRemove(pkg?: string, options: RemoveOptions = {}): Promise<void> {
+  const scope = removeScope(options)
+  const aiJson = await readAiJson(scope.aiJsonPath)
   const packageKeys = pkg ? [pkg] : Object.keys(aiJson.packages)
 
   if (packageKeys.length === 0) {
@@ -22,7 +55,7 @@ export async function runRemove(pkg?: string): Promise<void> {
     if (!aiJson.packages[packageKey]) {
       throw new Error(
         `Package "${packageKey}" is not installed.\n` +
-        '  Check installed packages in .ai/ai.json',
+        `  Check installed packages in ${scope.manifestLabel}`,
       )
     }
   }
@@ -37,7 +70,7 @@ export async function runRemove(pkg?: string): Promise<void> {
 
   if (choices.length === 0) {
     for (const packageKey of packageKeys) removePackage(aiJson, packageKey)
-    await writeAiJson(aiJson)
+    await writeAiJson(aiJson, scope.aiJsonPath)
     console.log('No linked files found.')
     return
   }
@@ -62,24 +95,26 @@ export async function runRemove(pkg?: string): Promise<void> {
   let symlinkCount = 0
   let sourceCount = 0
   for (const [packageKey, artifacts] of selectedByPackage) {
-    const isLocal = packageKey === '.'
-    const targetPaths = [...artifacts].flatMap(artifact => targetPathsForArtifact(artifact))
+    const entry = aiJson.packages[packageKey]
+    const isLocal = entry.version === '*'
+    const targetPaths = [...artifacts]
+      .flatMap(artifact => targetPathsForArtifact(artifact))
+      .map(targetPath => path.join(scope.targetRoot, targetPath))
     await unlinkFiles([...new Set(targetPaths)])
     symlinkCount += targetPaths.length
 
     if (!isLocal) {
       for (const artifact of artifacts) {
-        await rm(`.ai/${artifact}`, { recursive: true, force: true })
+        await rm(path.join(scope.sourceRoot, artifact), { recursive: true, force: true })
         sourceCount += 1
       }
     }
 
-    const entry = aiJson.packages[packageKey]
     entry.linked = entry.linked.filter(artifact => !artifacts.has(artifact))
     if (entry.linked.length === 0) removePackage(aiJson, packageKey)
   }
 
-  await writeAiJson(aiJson)
+  await writeAiJson(aiJson, scope.aiJsonPath)
 
   console.log(`\nRemoved ${selected.length} file(s), ${symlinkCount} symlink target(s), and ${sourceCount} source file(s).`)
 }
@@ -96,9 +131,10 @@ function categoryForArtifact(artifact: string): string {
 export const removeCommand = new Command('remove')
   .description('Interactively remove active AI Setup artifacts')
   .argument('[package]', 'Optional package to remove from, e.g. owner/repo or .')
-  .action(async (pkg: string | undefined) => {
+  .option('--global', 'Remove from the user Global AI Setup at ~/.ai')
+  .action(async (pkg: string | undefined, options: RemoveOptions) => {
     try {
-      await runRemove(pkg)
+      await runRemove(pkg, options)
     } catch (err) {
       console.error(`✖ ${(err as Error).message}`)
       process.exit(1)
