@@ -54,7 +54,8 @@ function addScope(options: AddOptions = {}): AddScope {
 export async function runAdd(pkg: string, options: AddOptions = {}): Promise<void> {
   if (pkg === '.') {
     if (options.global) {
-      throw new Error('add --global . is not supported yet. Use add --global <owner/repo>[@version].')
+      await runAddGlobalLocal()
+      return
     }
     await runAddLocal()
     return
@@ -196,6 +197,63 @@ async function runAddLocal(): Promise<void> {
   console.log(`\nAdded ${selectedNew.length} local file(s).`)
 }
 
+async function runAddGlobalLocal(): Promise<void> {
+  const globalRoot = path.join(os.homedir(), '.ai')
+  const sourceRepoRoot = process.cwd()
+  if (path.resolve(sourceRepoRoot) === path.resolve(globalRoot)) {
+    throw new Error('add --global . must be run from a setup repository, not from the Global AI Setup root ~/.ai.')
+  }
+
+  const sourceRoot = path.join(sourceRepoRoot, '.ai')
+  const scope: AddScope = {
+    aiJsonPath: path.join(globalRoot, 'ai.json'),
+    sourceRoot,
+    targetRoot: globalRoot,
+    sourcePrefix: sourceRoot,
+  }
+  const aiJson = await readAiJson(scope.aiJsonPath)
+  const packageKey = path.relative(globalRoot, sourceRepoRoot)
+
+  // Global dogfooding records the source repository root, not its `.ai`
+  // directory, so moving the repo leaves an explicit stale key for remove.
+  // `version: "*"` marks this as a local source regardless of the key text.
+  aiJson.packages[packageKey] ??= { version: '*', linked: [] }
+
+  const providers = await promptProviders()
+  if (providers.length === 0) {
+    console.log('No providers selected.')
+    return
+  }
+
+  const currentLinked = aiJson.packages[packageKey].linked
+  const selectable = (await listArtifacts(sourceRoot, providers))
+    .filter(artifact => {
+      if (!currentLinked.includes(artifact)) return true
+      return targetPathsForArtifact(artifact, providers)
+        .some(targetPath => !existsSync(path.join(scope.targetRoot, targetPath)))
+    })
+  if (selectable.length === 0) {
+    console.log('No new local files found.')
+    return
+  }
+
+  const selectedNew = await checkbox({
+    message: 'Select local files to add:',
+    choices: selectable.map(label => ({ value: label, name: label, checked: true })),
+  })
+  if (selectedNew.length === 0) {
+    console.log('No files selected.')
+    return
+  }
+
+  await assertNoTargetConflicts(selectedNew, providers, scope)
+  const selected = [...new Set([...currentLinked, ...selectedNew])]
+  await reconcileGlobalLocalPackageLinks(aiJson, packageKey, providers, selected, scope)
+  await writeAiJson(aiJson, scope.aiJsonPath)
+
+  console.log(`\nAdded ${selectedNew.length} global local file(s).`)
+}
+
 async function promptProviders(): Promise<string[]> {
   return checkbox({
     message: 'Select providers to add:',
@@ -303,6 +361,37 @@ async function reconcileRemoteGlobalPackageLinks(
     )
   }
 
+  await assertNoTargetConflicts(selected, providers, scope)
+
+  const allowedTargets = new Map<string, string>()
+  for (const artifact of selected) {
+    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
+      allowedTargets.set(
+        path.join(scope.targetRoot, targetPath),
+        path.join(scope.sourceRoot, artifact),
+      )
+    }
+  }
+
+  for (const [targetPath, sourcePath] of allowedTargets) {
+    if (!existsSync(targetPath)) await createScopedSymlink(sourcePath, targetPath)
+  }
+
+  aiJson.packages[packageKey].linked = selected
+}
+
+async function reconcileGlobalLocalPackageLinks(
+  aiJson: AiJson,
+  packageKey: string,
+  providers: string[],
+  selectedLabels: string[],
+  scope: AddScope,
+): Promise<void> {
+  if (!aiJson.packages[packageKey]) {
+    throw new Error(`Package "${packageKey}" is not installed.`)
+  }
+
+  const selected = [...new Set(selectedLabels)]
   await assertNoTargetConflicts(selected, providers, scope)
 
   const allowedTargets = new Map<string, string>()

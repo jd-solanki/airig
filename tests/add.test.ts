@@ -483,4 +483,78 @@ describe('runAdd', () => {
       },
     })
   })
+
+  it('dogfoods local setup artifacts into the global setup with a relative source-root key', async () => {
+    const sourceRepo = path.join(tmpDir, 'setup-repo')
+    await mkdir(sourceRepo, { recursive: true })
+    process.chdir(sourceRepo)
+    await makeFile('.ai/skills/tdd/SKILL.md', '# TDD')
+    await makeFile('.ai/skills/unused/SKILL.md', '# Unused')
+
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['claude']
+      if (message === 'Select local files to add:') return ['skills/tdd']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await runAdd('.', { global: true })
+
+    const packageKey = path.relative(globalRoot, sourceRepo)
+    const targetPath = path.join(globalRoot, '.claude/skills/tdd')
+    expect((await lstat(targetPath)).isSymbolicLink()).toBe(true)
+    expect(await readlink(targetPath)).toBe(
+      path.relative(path.dirname(targetPath), path.join(sourceRepo, '.ai/skills/tdd')),
+    )
+    expect(existsSync(path.join(globalRoot, 'skills/tdd'))).toBe(false)
+    expect(existsSync(path.join(sourceRepo, '.ai/skills/tdd/SKILL.md'))).toBe(true)
+
+    const aiJson = await readAiJson(globalAiJsonPath())
+    expect(aiJson.packages[packageKey]).toEqual({
+      version: '*',
+      linked: ['skills/tdd'],
+    })
+  })
+
+  it('rejects global local dogfooding from the global target root', async () => {
+    await mkdir(globalRoot, { recursive: true })
+    process.chdir(globalRoot)
+
+    await expect(runAdd('.', { global: true })).rejects.toThrow('not from the Global AI Setup root')
+
+    expect(checkbox).not.toHaveBeenCalled()
+    expect(await readAiJson(globalAiJsonPath())).toEqual({ packages: {} })
+  })
+
+  it('keeps stale global local keys when dogfooding from a different source path', async () => {
+    const oldRepo = path.join(tmpDir, 'old-setup')
+    const newRepo = path.join(tmpDir, 'new-setup')
+    const oldKey = path.relative(globalRoot, oldRepo)
+    await writeAiJson({
+      packages: {
+        [oldKey]: { version: '*', linked: ['skills/old'] },
+      },
+    }, globalAiJsonPath())
+    await mkdir(newRepo, { recursive: true })
+    process.chdir(newRepo)
+    await makeFile('.ai/AGENTS.md', '# Agents')
+
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['codex']
+      if (message === 'Select local files to add:') return ['AGENTS.md']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await runAdd('.', { global: true })
+
+    const newKey = path.relative(globalRoot, newRepo)
+    const aiJson = await readAiJson(globalAiJsonPath())
+    expect(aiJson.packages[oldKey]).toEqual({ version: '*', linked: ['skills/old'] })
+    expect(aiJson.packages[newKey]).toEqual({ version: '*', linked: ['AGENTS.md'] })
+    expect(await readlink(path.join(globalRoot, 'AGENTS.md'))).toBe(
+      path.relative(globalRoot, path.join(newRepo, '.ai/AGENTS.md')),
+    )
+    expect(existsSync(path.join(newRepo, '.ai/AGENTS.md'))).toBe(true)
+  })
 })

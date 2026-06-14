@@ -38,9 +38,6 @@ function validate(data: unknown, aiJsonPath = AI_JSON_PATH): AiJson {
     if (key === '.' && entry.version !== '*') {
       throw new Error(`${aiJsonPath} is malformed: local package "." must use version "*".`)
     }
-    if (key !== '.' && entry.version === '*') {
-      throw new Error(`${aiJsonPath} is malformed: remote package "${key}" must use an exact version.`)
-    }
     if (entry.linked !== undefined && (
       !Array.isArray(entry.linked) ||
       entry.linked.some(label => typeof label !== 'string' || label.length === 0)

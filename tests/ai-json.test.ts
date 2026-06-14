@@ -97,13 +97,15 @@ describe('readAiJson', () => {
     await expect(readAiJson()).rejects.toThrow('local package "." must use version "*"')
   })
 
-  it('rejects wildcard versions for remote packages', async () => {
+  it('allows wildcard versions for non-dot local source roots', async () => {
     await mkdir('.ai', { recursive: true })
     await writeFile('.ai/ai.json', JSON.stringify({
-      packages: { 'owner/repo': { version: '*', linked: [] } },
+      packages: { '../setup-repo': { version: '*', linked: [] } },
     }))
 
-    await expect(readAiJson()).rejects.toThrow('must use an exact version')
+    await expect(readAiJson()).resolves.toEqual({
+      packages: { '../setup-repo': { version: '*', linked: [] } },
+    })
   })
 })
 
