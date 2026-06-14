@@ -13,8 +13,12 @@ npm install --global @airig/cli
 ```sh
 airig add <owner/repo>[@version]
 airig add .
+airig add --global <owner/repo>[@version]
+airig add --global .
 airig update <owner/repo>@<version>
+airig update --global <owner/repo>@<version>
 airig remove [owner/repo|.]
+airig remove --global [owner/repo|stored-local-key]
 airig publish [tag]
 ```
 
@@ -23,8 +27,12 @@ For one-off usage without a global install, run the npm Package directly:
 ```sh
 npx @airig/cli add <owner/repo>[@version]
 npx @airig/cli add .
+npx @airig/cli add --global <owner/repo>[@version]
+npx @airig/cli add --global .
 npx @airig/cli update <owner/repo>@<version>
+npx @airig/cli update --global <owner/repo>@<version>
 npx @airig/cli remove [owner/repo|.]
+npx @airig/cli remove --global [owner/repo|stored-local-key]
 npx @airig/cli publish [tag]
 ```
 
@@ -35,6 +43,21 @@ The Package is named `@airig/cli`; the installed binary is `airig`.
 airig installs selected AI Setup artifacts from immutable GitHub releases into `.ai/`, then links them into provider-specific config paths. It supports local author dogfooding with `add .`, explicit version updates, interactive removal, and publishing `.ai/` as an `ai.zip` release asset.
 
 Remote Setup Releases are pinned to exact versions in `.ai/ai.json`. `add` and `update` verify GitHub release immutability before writing remote content.
+
+## Global AI Setups
+
+Add, update, and remove also accept a subcommand-level `--global` option to manage your personal Global AI Setup in `~/.ai` instead of the current project's `.ai/` directory. Global state is stored in `~/.ai/ai.json`, and selected artifacts are activated under the global setup root with the same provider layout as project installs.
+
+```sh
+airig add --global <owner/repo>[@version]
+airig add --global .
+airig update --global <owner/repo>@<version>
+airig remove --global [owner/repo|stored-local-key]
+```
+
+Use `add --global .` from an AI Setup source repository when you want to dogfood local changes in your own global setup. airig records the source repository as a stored local key relative to `~/.ai`, so use that exact key with `remove --global <stored-local-key>` when removing it later.
+
+`publish` remains project-only and does not support `--global`. Authors share Global AI Setups by publishing the source setup repository, then installing or dogfooding that repository; `~/.ai` itself is not published directly.
 
 ## Maintainer Releases
 
