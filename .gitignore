@@ -4,3 +4,5 @@ ai.zip
 *.tsbuildinfo
 .env
 !.env.example
+.krutrimbox/logs/
+.krutrimbox/locks/
