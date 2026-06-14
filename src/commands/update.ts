@@ -25,6 +25,8 @@ interface TargetConflict {
   reason: 'real-file' | 'wrong-symlink'
 }
 
+type FileStat = Awaited<ReturnType<typeof lstat>>
+
 function updateScope(options: UpdateOptions = {}): UpdateScope {
   if (!options.global) {
     return {
@@ -140,12 +142,8 @@ async function hasActiveProviderTarget(
 }
 
 async function targetPointsToArtifact(targetPath: string, sourcePath: string): Promise<boolean> {
-  let targetStat: Awaited<ReturnType<typeof lstat>>
-  try {
-    targetStat = await lstat(targetPath)
-  } catch {
-    return false
-  }
+  const targetStat = await lstatIfExists(targetPath)
+  if (!targetStat) return false
 
   if (!targetStat.isSymbolicLink()) return false
 
@@ -204,12 +202,8 @@ async function targetConflictFor(
 ): Promise<TargetConflict | undefined> {
   if (path.resolve(sourcePath) === path.resolve(targetPath)) return undefined
 
-  let targetStat: Awaited<ReturnType<typeof lstat>>
-  try {
-    targetStat = await lstat(targetPath)
-  } catch {
-    return undefined
-  }
+  const targetStat = await lstatIfExists(targetPath)
+  if (!targetStat) return undefined
 
   if (!targetStat.isSymbolicLink()) return { targetPath, reason: 'real-file' }
 
@@ -223,14 +217,19 @@ async function targetConflictFor(
 async function createScopedSymlink(sourcePath: string, targetPath: string): Promise<void> {
   if (path.resolve(sourcePath) === path.resolve(targetPath)) return
 
-  try {
-    const targetStat = await lstat(targetPath)
-    if (targetStat.isSymbolicLink()) return
-  } catch {
-  }
+  const targetStat = await lstatIfExists(targetPath)
+  if (targetStat?.isSymbolicLink()) return
 
   await mkdir(path.dirname(targetPath), { recursive: true })
   await symlink(path.relative(path.dirname(targetPath), sourcePath), targetPath)
+}
+
+async function lstatIfExists(filePath: string): Promise<FileStat | undefined> {
+  try {
+    return await lstat(filePath)
+  } catch {
+    return undefined
+  }
 }
 
 export const updateCommand = new Command('update')

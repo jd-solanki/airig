@@ -100,8 +100,9 @@ export async function runRemove(pkg?: string, options: RemoveOptions = {}): Prom
     const targetPaths = [...artifacts]
       .flatMap(artifact => targetPathsForArtifact(artifact))
       .map(targetPath => path.join(scope.targetRoot, targetPath))
-    await unlinkFiles([...new Set(targetPaths)])
-    symlinkCount += targetPaths.length
+    const uniqueTargetPaths = [...new Set(targetPaths)]
+    await unlinkFiles(uniqueTargetPaths)
+    symlinkCount += uniqueTargetPaths.length
 
     if (!isLocal) {
       for (const artifact of artifacts) {

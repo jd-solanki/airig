@@ -38,6 +38,11 @@ interface AddScope {
   sourcePrefix: string
 }
 
+interface LocalOverridePlan {
+  overrides: ReturnType<typeof findLocalPackageOverrides>
+  targetPaths: Set<string>
+}
+
 function addScope(options: AddOptions = {}): AddScope {
   if (!options.global) {
     return {
@@ -123,17 +128,13 @@ export async function runAdd(pkg: string, options: AddOptions = {}): Promise<voi
     }
 
     const artifactsToCopy = await expandReleaseArtifactsWithSymlinkDependencies(extractedAiDir, selectedNew)
-    const localOverrides = options.global
-      ? findLocalPackageOverrides(aiJson, packageKey, providers, selectedNew)
-      : []
-    const allowedLocalTargets = options.global
-      ? localOverrideTargetPaths(localOverrides, scope)
-      : new Set<string>()
+    const localOverridePlan = options.global
+      ? planLocalOverrides(aiJson, packageKey, providers, selectedNew, scope)
+      : emptyLocalOverridePlan()
     assertNoRemoteConflicts(aiJson, packageKey, providers, selectedNew)
-    await assertNoSourceConflicts(packageKey, currentLinked, artifactsToCopy, scope, allowedLocalTargets)
-    await assertNoTargetConflicts(selectedNew, providers, scope, allowedLocalTargets)
-    await unlinkFiles(localOverrides.map(({ targetPath }) => path.join(scope.targetRoot, targetPath)))
-    pruneLocalPackageOverrides(aiJson, localOverrides)
+    await assertNoSourceConflicts(packageKey, currentLinked, artifactsToCopy, scope, localOverridePlan.targetPaths)
+    await assertNoTargetConflicts(selectedNew, providers, scope, localOverridePlan.targetPaths)
+    await pruneLocalOverrides(aiJson, scope, localOverridePlan.overrides)
 
     await copyReleaseArtifactsToLocal(extractedAiDir, selectedNew, scope.sourceRoot)
 
@@ -179,6 +180,36 @@ async function assertNoSourceConflicts(
     conflicts.map(artifact => `  ${path.join(scope.sourcePrefix, artifact)}`).join('\n') + '\n' +
     '  Remove the conflicting files, then run add again.',
   )
+}
+
+function emptyLocalOverridePlan(): LocalOverridePlan {
+  return {
+    overrides: [],
+    targetPaths: new Set<string>(),
+  }
+}
+
+function planLocalOverrides(
+  aiJson: AiJson,
+  packageKey: string,
+  providers: string[],
+  artifacts: string[],
+  scope: AddScope,
+): LocalOverridePlan {
+  const overrides = findLocalPackageOverrides(aiJson, packageKey, providers, artifacts)
+  return {
+    overrides,
+    targetPaths: localOverrideTargetPaths(overrides, scope),
+  }
+}
+
+async function pruneLocalOverrides(
+  aiJson: AiJson,
+  scope: AddScope,
+  localOverrides: ReturnType<typeof findLocalPackageOverrides>,
+): Promise<void> {
+  await unlinkFiles(localOverrides.map(({ targetPath }) => path.join(scope.targetRoot, targetPath)))
+  pruneLocalPackageOverrides(aiJson, localOverrides)
 }
 
 async function runAddLocal(): Promise<void> {
@@ -392,11 +423,9 @@ async function reconcileRemoteGlobalPackageLinks(
     )
   }
 
-  const localOverrides = findLocalPackageOverrides(aiJson, packageKey, providers, selected)
-  const localOverrideTargets = localOverrideTargetPaths(localOverrides, scope)
-  await assertNoTargetConflicts(selected, providers, scope, localOverrideTargets)
-  await unlinkFiles(localOverrides.map(({ targetPath }) => path.join(scope.targetRoot, targetPath)))
-  pruneLocalPackageOverrides(aiJson, localOverrides)
+  const localOverridePlan = planLocalOverrides(aiJson, packageKey, providers, selected, scope)
+  await assertNoTargetConflicts(selected, providers, scope, localOverridePlan.targetPaths)
+  await pruneLocalOverrides(aiJson, scope, localOverridePlan.overrides)
 
   const allowedTargets = new Map<string, string>()
   for (const artifact of selected) {
