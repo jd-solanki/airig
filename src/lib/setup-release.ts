@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import extractZip from 'extract-zip'
-import { lstatIfExists } from './filesystem.js'
+import { lstatIfExists } from './filesystem'
 
 async function findSkillDirs(dir: string): Promise<string[]> {
   let entries: { name: string; isFile(): boolean; isDirectory(): boolean }[]

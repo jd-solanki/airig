@@ -3,8 +3,8 @@ import { execSync } from 'node:child_process'
 import { readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { parseEnv } from 'node:util'
-import { create as createZip } from '../lib/zip.js'
-import { createOctokit, getImmutableReleasesStatus, publishRelease } from '../lib/github.js'
+import { create as createZip } from '../lib/zip'
+import { createOctokit, getImmutableReleasesStatus, publishRelease } from '../lib/github'
 
 function resolveTag(tagArg: string | undefined): string {
   if (tagArg) return tagArg

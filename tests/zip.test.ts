@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import extractZip from 'extract-zip'
-import { create } from '../src/lib/zip.js'
+import { create } from '../src/lib/zip'
 
 let tmpDir: string
 

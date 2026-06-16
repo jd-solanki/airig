@@ -7,7 +7,7 @@ import {
   PROVIDER_REGISTRY,
   rulesFor,
   targetPathsForArtifact,
-} from '../src/lib/provider-registry.js'
+} from '../src/lib/provider-registry'
 
 let tmpDir: string
 let originalCwd: string

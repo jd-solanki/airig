@@ -2,19 +2,19 @@ import { Command } from 'commander'
 import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { Octokit } from '@octokit/rest'
-import { readAiJson, writeAiJson } from '../lib/ai-json.js'
-import { fetchReleaseInfo, downloadAsset } from '../lib/github.js'
-import { parseExactPackageRef } from '../lib/package-ref.js'
-import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry.js'
-import { copyReleaseArtifactsToLocal, withExtractedReleaseAi } from '../lib/setup-release.js'
-import { unlinkFiles } from '../lib/linker.js'
-import { resolveSetupScope, type SetupScope } from '../lib/setup-scope.js'
+import { readAiJson, writeAiJson } from '../lib/ai-json'
+import { fetchReleaseInfo, downloadAsset } from '../lib/github'
+import { parseExactPackageRef } from '../lib/package-ref'
+import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry'
+import { copyReleaseArtifactsToLocal, withExtractedReleaseAi } from '../lib/setup-release'
+import { unlinkFiles } from '../lib/linker'
+import { resolveSetupScope, type SetupScope } from '../lib/setup-scope'
 import {
   assertNoTargetConflicts,
   createRelativeSymlinkIfMissing,
   targetPointsToSource,
   targetSourcePairs,
-} from '../lib/target-links.js'
+} from '../lib/target-links'
 
 interface UpdateOptions {
   global?: boolean

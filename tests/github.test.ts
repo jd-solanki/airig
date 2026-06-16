@@ -8,7 +8,7 @@ import {
   getImmutableReleasesStatus,
   fetchReleaseInfo,
   downloadAsset,
-} from '../src/lib/github.js'
+} from '../src/lib/github'
 
 let tmpDir: string
 

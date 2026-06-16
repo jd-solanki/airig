@@ -11,8 +11,8 @@ import {
   linkProviders,
   reconcilePackageLinks,
   unlinkFiles,
-} from '../src/lib/linker.js'
-import { readAiJson, type AiJson } from '../src/lib/ai-json.js'
+} from '../src/lib/linker'
+import { readAiJson, type AiJson } from '../src/lib/ai-json'
 
 let tmpDir: string
 let originalCwd: string

@@ -7,8 +7,8 @@ import path from 'node:path'
 vi.mock('@inquirer/prompts', () => ({ checkbox: vi.fn() }))
 
 import { checkbox } from '@inquirer/prompts'
-import { runRemove } from '../src/commands/remove.js'
-import { readAiJson, writeAiJson, type AiJson } from '../src/lib/ai-json.js'
+import { runRemove } from '../src/commands/remove'
+import { readAiJson, writeAiJson, type AiJson } from '../src/lib/ai-json'
 
 let tmpDir: string
 let originalCwd: string

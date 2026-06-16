@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Command } from 'commander'
-import { addCommand } from '../src/commands/add.js'
-import { updateCommand } from '../src/commands/update.js'
-import { removeCommand } from '../src/commands/remove.js'
-import { publishCommand } from '../src/commands/publish.js'
+import { addCommand } from '../src/commands/add'
+import { updateCommand } from '../src/commands/update'
+import { removeCommand } from '../src/commands/remove'
+import { publishCommand } from '../src/commands/publish'
 
 describe('CLI options', () => {
   it('exposes --global only on supported subcommands', async () => {

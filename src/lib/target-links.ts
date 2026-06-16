@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readlink, symlink } from 'node:fs/promises'
 import path from 'node:path'
-import { lstatIfExists } from './filesystem.js'
-import { targetPathsForArtifact } from './provider-registry.js'
+import { lstatIfExists } from './filesystem'
+import { targetPathsForArtifact } from './provider-registry'
 
 export interface TargetConflict {
   targetPath: string

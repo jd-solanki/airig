@@ -5,15 +5,15 @@ import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 
-vi.mock('../src/lib/github.js', () => ({
+vi.mock('../src/lib/github', () => ({
   fetchReleaseInfo: vi.fn(),
   downloadAsset: vi.fn(),
 }))
 
-import { runUpdate } from '../src/commands/update.js'
-import { readAiJson, writeAiJson, type AiJson } from '../src/lib/ai-json.js'
-import { create } from '../src/lib/zip.js'
-import { fetchReleaseInfo, downloadAsset } from '../src/lib/github.js'
+import { runUpdate } from '../src/commands/update'
+import { readAiJson, writeAiJson, type AiJson } from '../src/lib/ai-json'
+import { create } from '../src/lib/zip'
+import { fetchReleaseInfo, downloadAsset } from '../src/lib/github'
 
 let tmpDir: string
 let originalCwd: string

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import extractZip from 'extract-zip'
-import { createPublishZip, loadPublishGithubTokenFromCwd, parseRemoteUrl } from '../src/commands/publish.js'
+import { createPublishZip, loadPublishGithubTokenFromCwd, parseRemoteUrl } from '../src/commands/publish'
 
 describe('parseRemoteUrl', () => {
   it('parses standard HTTPS remote', () => {

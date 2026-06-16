@@ -4,27 +4,27 @@ import { checkbox } from '@inquirer/prompts'
 import { existsSync } from 'node:fs'
 import { lstat } from 'node:fs/promises'
 import path from 'node:path'
-import { readAiJson, writeAiJson, addPackage, type AiJson, type PackageEntry } from '../lib/ai-json.js'
-import { fetchReleaseInfo, downloadAsset } from '../lib/github.js'
-import { parsePackageRef } from '../lib/package-ref.js'
+import { readAiJson, writeAiJson, addPackage, type AiJson, type PackageEntry } from '../lib/ai-json'
+import { fetchReleaseInfo, downloadAsset } from '../lib/github'
+import { parsePackageRef } from '../lib/package-ref'
 import {
   copyReleaseArtifactsToLocal,
   expandReleaseArtifactsWithSymlinkDependencies,
   withExtractedReleaseAi,
-} from '../lib/setup-release.js'
-import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry.js'
+} from '../lib/setup-release'
+import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry'
 import {
   findLocalPackageOverrides,
   findRemotePackageConflicts,
   pruneLocalPackageOverrides,
   reconcilePackageLinks,
   unlinkFiles,
-} from '../lib/linker.js'
+} from '../lib/linker'
 import {
   assertNoTargetConflicts as assertNoTargetConflictsForPairs,
   createRelativeSymlinkIfMissing,
   targetSourcePairs,
-} from '../lib/target-links.js'
+} from '../lib/target-links'
 import {
   globalLocalPackageKey,
   globalLocalSourceRepoRoot,
@@ -32,7 +32,7 @@ import {
   globalSetupRoot,
   resolveSetupScope,
   type SetupScope,
-} from '../lib/setup-scope.js'
+} from '../lib/setup-scope'
 
 interface AddOptions {
   global?: boolean

@@ -5,16 +5,16 @@ import os from 'node:os'
 import path from 'node:path'
 
 vi.mock('@inquirer/prompts', () => ({ checkbox: vi.fn() }))
-vi.mock('../src/lib/github.js', () => ({
+vi.mock('../src/lib/github', () => ({
   fetchReleaseInfo: vi.fn(),
   downloadAsset: vi.fn(),
 }))
 
 import { checkbox } from '@inquirer/prompts'
-import { runAdd } from '../src/commands/add.js'
-import { readAiJson, writeAiJson } from '../src/lib/ai-json.js'
-import { create } from '../src/lib/zip.js'
-import { fetchReleaseInfo, downloadAsset } from '../src/lib/github.js'
+import { runAdd } from '../src/commands/add'
+import { readAiJson, writeAiJson } from '../src/lib/ai-json'
+import { create } from '../src/lib/zip'
+import { fetchReleaseInfo, downloadAsset } from '../src/lib/github'
 
 let tmpDir: string
 let originalCwd: string

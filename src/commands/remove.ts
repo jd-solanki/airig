@@ -2,10 +2,10 @@ import { Command } from 'commander'
 import { checkbox } from '@inquirer/prompts'
 import { rm } from 'node:fs/promises'
 import path from 'node:path'
-import { readAiJson, writeAiJson, removePackage, type AiJson } from '../lib/ai-json.js'
-import { targetPathsForArtifact } from '../lib/provider-registry.js'
-import { unlinkFiles } from '../lib/linker.js'
-import { resolveSetupScope, type SetupScope } from '../lib/setup-scope.js'
+import { readAiJson, writeAiJson, removePackage, type AiJson } from '../lib/ai-json'
+import { targetPathsForArtifact } from '../lib/provider-registry'
+import { unlinkFiles } from '../lib/linker'
+import { resolveSetupScope, type SetupScope } from '../lib/setup-scope'
 
 interface RemoveOptions {
   global?: boolean

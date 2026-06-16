@@ -11,7 +11,7 @@ import {
   addLinked,
   removeLinked,
   type AiJson,
-} from '../src/lib/ai-json.js'
+} from '../src/lib/ai-json'
 
 let tmpDir: string
 let originalCwd: string

@@ -1,14 +1,14 @@
 import { lstat, unlink } from 'node:fs/promises'
-import { listArtifacts, targetPathsForArtifact } from './provider-registry.js'
-import type { AiJson } from './ai-json.js'
-import { readAiJson, writeAiJson } from './ai-json.js'
+import { listArtifacts, targetPathsForArtifact } from './provider-registry'
+import type { AiJson } from './ai-json'
+import { readAiJson, writeAiJson } from './ai-json'
 import {
   assertNoTargetConflicts as assertNoTargetConflictsForPairs,
   createRelativeSymlink,
   targetConflictFor,
   targetPointsToSource,
   targetSourcePairs,
-} from './target-links.js'
+} from './target-links'
 
 export type SkipReason = 'already-linked' | 'conflict-real-file' | 'conflict-wrong-symlink'
 
