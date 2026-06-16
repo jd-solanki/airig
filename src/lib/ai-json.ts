@@ -59,7 +59,7 @@ export async function readAiJson(aiJsonPath = AI_JSON_PATH): Promise<AiJson> {
     return { packages: {} }
   }
   const raw = await readFile(aiJsonPath, 'utf-8')
-  return validate(JSON.parse(raw), aiJsonPath)
+  return validate(parseAiJson(raw, aiJsonPath), aiJsonPath)
 }
 
 export async function writeAiJson(data: AiJson, aiJsonPath = AI_JSON_PATH): Promise<void> {
@@ -100,4 +100,16 @@ export function addLinked(data: AiJson, key: string, artifact: string): void {
 export function removeLinked(data: AiJson, key: string, artifact: string): void {
   if (!data.packages[key]) return
   data.packages[key].linked = data.packages[key].linked.filter(a => a !== artifact)
+}
+
+function parseAiJson(raw: string, aiJsonPath: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    throw new Error(
+      `${aiJsonPath} is malformed: expected valid JSON.\n` +
+      `  Parser error: ${detail}`,
+    )
+  }
 }

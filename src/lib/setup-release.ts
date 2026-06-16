@@ -1,8 +1,9 @@
-import { cp, lstat, mkdir, mkdtemp, readdir, readlink, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readdir, readlink, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import extractZip from 'extract-zip'
+import { lstatIfExists } from './filesystem.js'
 
 async function findSkillDirs(dir: string): Promise<string[]> {
   let entries: { name: string; isFile(): boolean; isDirectory(): boolean }[]
@@ -148,12 +149,4 @@ export async function replaceReleaseArtifact(extractedAiDir: string, artifact: s
   await mkdir(path.dirname(targetPath), { recursive: true })
   await rm(targetPath, { recursive: true, force: true })
   await cp(sourcePath, targetPath, { recursive: true, force: true, verbatimSymlinks: true })
-}
-
-async function lstatIfExists(filePath: string): Promise<Awaited<ReturnType<typeof import('node:fs/promises').lstat>> | undefined> {
-  try {
-    return await lstat(filePath)
-  } catch {
-    return undefined
-  }
 }

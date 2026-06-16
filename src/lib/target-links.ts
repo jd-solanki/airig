@@ -1,14 +1,13 @@
 import { existsSync } from 'node:fs'
-import { lstat, mkdir, readlink, symlink } from 'node:fs/promises'
+import { mkdir, readlink, symlink } from 'node:fs/promises'
 import path from 'node:path'
+import { lstatIfExists } from './filesystem.js'
 import { targetPathsForArtifact } from './provider-registry.js'
 
 export interface TargetConflict {
   targetPath: string
   reason: 'real-file' | 'wrong-symlink'
 }
-
-type FileStat = Awaited<ReturnType<typeof lstat>>
 
 export function targetSourcePairs(
   sourceRoot: string,
@@ -89,14 +88,6 @@ export async function createRelativeSymlink(sourcePath: string, targetPath: stri
 export async function createRelativeSymlinkIfMissing(sourcePath: string, targetPath: string): Promise<void> {
   if (existsSync(targetPath)) return
   await createRelativeSymlink(sourcePath, targetPath)
-}
-
-export async function lstatIfExists(filePath: string): Promise<FileStat | undefined> {
-  try {
-    return await lstat(filePath)
-  } catch {
-    return undefined
-  }
 }
 
 function isAllowedWrongSymlink(

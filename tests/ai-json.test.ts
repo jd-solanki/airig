@@ -79,6 +79,13 @@ describe('readAiJson', () => {
     await expect(readAiJson()).rejects.toThrow('malformed')
   })
 
+  it('includes the manifest path when JSON cannot be parsed', async () => {
+    await mkdir('.ai', { recursive: true })
+    await writeFile('.ai/ai.json', '{')
+
+    await expect(readAiJson()).rejects.toThrow('.ai/ai.json is malformed: expected valid JSON')
+  })
+
   it('validates linked as a string array', async () => {
     await mkdir('.ai', { recursive: true })
     await writeFile('.ai/ai.json', JSON.stringify({
