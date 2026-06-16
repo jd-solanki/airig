@@ -1,21 +1,14 @@
 import { Command } from 'commander'
 import { checkbox } from '@inquirer/prompts'
 import { rm } from 'node:fs/promises'
-import os from 'node:os'
 import path from 'node:path'
 import { readAiJson, writeAiJson, removePackage } from '../lib/ai-json.js'
 import { targetPathsForArtifact } from '../lib/provider-registry.js'
 import { unlinkFiles } from '../lib/linker.js'
+import { resolveSetupScope } from '../lib/setup-scope.js'
 
 interface RemoveOptions {
   global?: boolean
-}
-
-interface RemoveScope {
-  aiJsonPath: string
-  sourceRoot: string
-  targetRoot: string
-  manifestLabel: string
 }
 
 interface RemoveChoice {
@@ -23,27 +16,8 @@ interface RemoveChoice {
   artifact: string
 }
 
-function removeScope(options: RemoveOptions = {}): RemoveScope {
-  if (!options.global) {
-    return {
-      aiJsonPath: path.join('.ai', 'ai.json'),
-      sourceRoot: '.ai',
-      targetRoot: '.',
-      manifestLabel: '.ai/ai.json',
-    }
-  }
-
-  const globalRoot = path.join(os.homedir(), '.ai')
-  return {
-    aiJsonPath: path.join(globalRoot, 'ai.json'),
-    sourceRoot: globalRoot,
-    targetRoot: globalRoot,
-    manifestLabel: '~/.ai/ai.json',
-  }
-}
-
 export async function runRemove(pkg?: string, options: RemoveOptions = {}): Promise<void> {
-  const scope = removeScope(options)
+  const scope = resolveSetupScope(options)
   const aiJson = await readAiJson(scope.aiJsonPath)
   const packageKeys = pkg ? [pkg] : Object.keys(aiJson.packages)
 

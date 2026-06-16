@@ -1,8 +1,14 @@
-import { symlink, mkdir, lstat, readlink, unlink } from 'node:fs/promises'
-import path from 'node:path'
+import { lstat, unlink } from 'node:fs/promises'
 import { listArtifacts, targetPathsForArtifact } from './provider-registry.js'
 import type { AiJson } from './ai-json.js'
 import { readAiJson, writeAiJson } from './ai-json.js'
+import {
+  assertNoTargetConflicts as assertNoTargetConflictsForPairs,
+  createRelativeSymlink,
+  targetConflictFor,
+  targetPointsToSource,
+  targetSourcePairs,
+} from './target-links.js'
 
 export type SkipReason = 'already-linked' | 'conflict-real-file' | 'conflict-wrong-symlink'
 
@@ -35,11 +41,6 @@ export interface OwnedTarget {
 export interface PackageConflict {
   targetPath: string
   owner: OwnedTarget
-}
-
-interface TargetConflict {
-  targetPath: string
-  reason: 'real-file' | 'wrong-symlink'
 }
 
 function isLocalPackage(version: string | undefined): boolean {
@@ -83,31 +84,21 @@ async function createSymlink(
   targetPath: string,
   result: LinkResult,
 ): Promise<void> {
-  let targetStat: Awaited<ReturnType<typeof lstat>> | undefined
-  try {
-    targetStat = await lstat(targetPath)
-  } catch {
-    // target doesn't exist — proceed to create
-  }
-
-  if (targetStat) {
-    if (targetStat.isSymbolicLink()) {
-      const existing = await readlink(targetPath)
-      const resolvedExisting = path.resolve(path.dirname(targetPath), existing)
-      const resolvedSource = path.resolve(sourcePath)
-      if (resolvedExisting === resolvedSource) {
-        result.skipped.push({ path: targetPath, reason: 'already-linked' })
-        return
-      }
-      result.skipped.push({ path: targetPath, reason: 'conflict-wrong-symlink' })
-    } else {
-      result.skipped.push({ path: targetPath, reason: 'conflict-real-file' })
-    }
+  if (await targetPointsToSource(targetPath, sourcePath)) {
+    result.skipped.push({ path: targetPath, reason: 'already-linked' })
     return
   }
 
-  const relSource = path.relative(path.dirname(targetPath), sourcePath)
-  await symlink(relSource, targetPath)
+  const conflict = await targetConflictFor(sourcePath, targetPath)
+  if (conflict) {
+    result.skipped.push({
+      path: targetPath,
+      reason: conflict.reason === 'real-file' ? 'conflict-real-file' : 'conflict-wrong-symlink',
+    })
+    return
+  }
+
+  await createRelativeSymlink(sourcePath, targetPath)
   result.linked.push(targetPath)
 }
 
@@ -116,68 +107,22 @@ export async function linkPackageArtifacts(
   artifactLabels: string[],
 ): Promise<LinkResult> {
   const result: LinkResult = { linked: [], skipped: [] }
-  const allowedTargets = new Map<string, string>()
+  const targets = targetSourcePairs('.ai', '.', providers, artifactLabels)
 
-  for (const artifact of artifactLabels) {
-    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
-      allowedTargets.set(targetPath, `.ai/${artifact}`)
-    }
-  }
-
-  for (const [targetPath, sourcePath] of allowedTargets) {
-    await mkdir(path.dirname(targetPath), { recursive: true })
+  for (const [targetPath, sourcePath] of targets) {
     await createSymlink(sourcePath, targetPath, result)
   }
 
   return result
 }
 
-async function targetConflictFor(
-  sourcePath: string,
-  targetPath: string,
-): Promise<TargetConflict | undefined> {
-  let targetStat: Awaited<ReturnType<typeof lstat>>
-  try {
-    targetStat = await lstat(targetPath)
-  } catch {
-    return undefined
-  }
-
-  if (!targetStat.isSymbolicLink()) return { targetPath, reason: 'real-file' }
-
-  const existing = await readlink(targetPath)
-  const resolvedExisting = path.resolve(path.dirname(targetPath), existing)
-  const resolvedSource = path.resolve(sourcePath)
-  if (resolvedExisting === resolvedSource) return undefined
-  return { targetPath, reason: 'wrong-symlink' }
-}
-
 async function assertNoTargetConflicts(
   providers: string[],
   artifactLabels: string[],
 ): Promise<void> {
-  const conflicts: TargetConflict[] = []
-  const allowedTargets = new Map<string, string>()
-
-  for (const artifact of artifactLabels) {
-    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
-      allowedTargets.set(targetPath, `.ai/${artifact}`)
-    }
-  }
-
-  for (const [targetPath, sourcePath] of allowedTargets) {
-    const conflict = await targetConflictFor(sourcePath, targetPath)
-    if (conflict) conflicts.push(conflict)
-  }
-
-  if (conflicts.length === 0) return
-
-  throw new Error(
-    `Conflicts detected — the following target paths are already occupied:\n` +
-    conflicts
-      .map(conflict => `  ${conflict.targetPath}  (${conflict.reason})`)
-      .join('\n') + '\n' +
-    '  Remove or move the conflicting files, then run the command again.',
+  await assertNoTargetConflictsForPairs(
+    targetSourcePairs('.ai', '.', providers, artifactLabels),
+    'the command',
   )
 }
 

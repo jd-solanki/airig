@@ -1,6 +1,5 @@
 import { Command } from 'commander'
-import { lstat, mkdir, readlink, rm, symlink } from 'node:fs/promises'
-import os from 'node:os'
+import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { Octokit } from '@octokit/rest'
 import { readAiJson, writeAiJson } from '../lib/ai-json.js'
@@ -9,45 +8,22 @@ import { parseExactPackageRef } from '../lib/package-ref.js'
 import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry.js'
 import { copyReleaseArtifactsToLocal, withExtractedReleaseAi } from '../lib/setup-release.js'
 import { unlinkFiles } from '../lib/linker.js'
+import { resolveSetupScope, type SetupScope } from '../lib/setup-scope.js'
+import {
+  assertNoTargetConflicts,
+  createRelativeSymlinkIfMissing,
+  targetPointsToSource,
+  targetSourcePairs,
+} from '../lib/target-links.js'
 
 interface UpdateOptions {
   global?: boolean
 }
 
-interface UpdateScope {
-  aiJsonPath: string
-  sourceRoot: string
-  targetRoot: string
-}
-
-interface TargetConflict {
-  targetPath: string
-  reason: 'real-file' | 'wrong-symlink'
-}
-
-type FileStat = Awaited<ReturnType<typeof lstat>>
-
-function updateScope(options: UpdateOptions = {}): UpdateScope {
-  if (!options.global) {
-    return {
-      aiJsonPath: path.join('.ai', 'ai.json'),
-      sourceRoot: '.ai',
-      targetRoot: '.',
-    }
-  }
-
-  const globalRoot = path.join(os.homedir(), '.ai')
-  return {
-    aiJsonPath: path.join(globalRoot, 'ai.json'),
-    sourceRoot: globalRoot,
-    targetRoot: globalRoot,
-  }
-}
-
 export async function runUpdate(pkg: string, options: UpdateOptions = {}): Promise<void> {
   const { owner, repo, tag } = parseExactPackageRef(pkg)
   const packageKey = `${owner}/${repo}`
-  const scope = updateScope(options)
+  const scope = resolveSetupScope(options)
   const allProviders = Object.keys(PROVIDER_REGISTRY)
   const aiJson = await readAiJson(scope.aiJsonPath)
   const entry = aiJson.packages[packageKey]
@@ -111,7 +87,7 @@ export async function runUpdate(pkg: string, options: UpdateOptions = {}): Promi
 
 async function activeProvidersForLinkedArtifacts(
   linkedArtifacts: string[],
-  scope: UpdateScope,
+  scope: SetupScope,
 ): Promise<string[]> {
   const activeProviders: string[] = []
 
@@ -127,11 +103,11 @@ async function activeProvidersForLinkedArtifacts(
 async function hasActiveProviderTarget(
   provider: string,
   linkedArtifacts: string[],
-  scope: UpdateScope,
+  scope: SetupScope,
 ): Promise<boolean> {
   for (const artifact of linkedArtifacts) {
     for (const targetPath of targetPathsForArtifact(artifact, [provider])) {
-      if (await targetPointsToArtifact(
+      if (await targetPointsToSource(
         path.join(scope.targetRoot, targetPath),
         path.join(scope.sourceRoot, artifact),
       )) return true
@@ -141,94 +117,16 @@ async function hasActiveProviderTarget(
   return false
 }
 
-async function targetPointsToArtifact(targetPath: string, sourcePath: string): Promise<boolean> {
-  const targetStat = await lstatIfExists(targetPath)
-  if (!targetStat) return false
-
-  if (!targetStat.isSymbolicLink()) return false
-
-  const existing = await readlink(targetPath)
-  const resolvedExisting = path.resolve(path.dirname(targetPath), existing)
-  const resolvedSource = path.resolve(sourcePath)
-  return resolvedExisting === resolvedSource
-}
-
 async function reconcileScopedPackageLinks(
-  scope: UpdateScope,
+  scope: SetupScope,
   providers: string[],
   artifacts: string[],
 ): Promise<void> {
-  await assertNoTargetConflicts(scope, providers, artifacts)
+  const targets = targetSourcePairs(scope.sourceRoot, scope.targetRoot, providers, artifacts)
+  await assertNoTargetConflicts(targets, 'update')
 
-  for (const artifact of artifacts) {
-    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
-      const scopedTargetPath = path.join(scope.targetRoot, targetPath)
-      const scopedSourcePath = path.join(scope.sourceRoot, artifact)
-      await createScopedSymlink(scopedSourcePath, scopedTargetPath)
-    }
-  }
-}
-
-async function assertNoTargetConflicts(
-  scope: UpdateScope,
-  providers: string[],
-  artifacts: string[],
-): Promise<void> {
-  const conflicts: TargetConflict[] = []
-
-  for (const artifact of artifacts) {
-    for (const targetPath of targetPathsForArtifact(artifact, providers)) {
-      const sourcePath = path.join(scope.sourceRoot, artifact)
-      const scopedTargetPath = path.join(scope.targetRoot, targetPath)
-      const conflict = await targetConflictFor(sourcePath, scopedTargetPath)
-      if (conflict) conflicts.push(conflict)
-    }
-  }
-
-  if (conflicts.length === 0) return
-
-  throw new Error(
-    `Conflicts detected — the following target paths are already occupied:\n` +
-    conflicts
-      .map(conflict => `  ${conflict.targetPath}  (${conflict.reason})`)
-      .join('\n') + '\n' +
-    '  Remove or move the conflicting files, then run update again.',
-  )
-}
-
-async function targetConflictFor(
-  sourcePath: string,
-  targetPath: string,
-): Promise<TargetConflict | undefined> {
-  if (path.resolve(sourcePath) === path.resolve(targetPath)) return undefined
-
-  const targetStat = await lstatIfExists(targetPath)
-  if (!targetStat) return undefined
-
-  if (!targetStat.isSymbolicLink()) return { targetPath, reason: 'real-file' }
-
-  const existing = await readlink(targetPath)
-  const resolvedExisting = path.resolve(path.dirname(targetPath), existing)
-  const resolvedSource = path.resolve(sourcePath)
-  if (resolvedExisting === resolvedSource) return undefined
-  return { targetPath, reason: 'wrong-symlink' }
-}
-
-async function createScopedSymlink(sourcePath: string, targetPath: string): Promise<void> {
-  if (path.resolve(sourcePath) === path.resolve(targetPath)) return
-
-  const targetStat = await lstatIfExists(targetPath)
-  if (targetStat?.isSymbolicLink()) return
-
-  await mkdir(path.dirname(targetPath), { recursive: true })
-  await symlink(path.relative(path.dirname(targetPath), sourcePath), targetPath)
-}
-
-async function lstatIfExists(filePath: string): Promise<FileStat | undefined> {
-  try {
-    return await lstat(filePath)
-  } catch {
-    return undefined
+  for (const [targetPath, sourcePath] of targets) {
+    await createRelativeSymlinkIfMissing(sourcePath, targetPath)
   }
 }
 
