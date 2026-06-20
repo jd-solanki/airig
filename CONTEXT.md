@@ -52,7 +52,7 @@ A versioned AI Setup published by an author on GitHub. Identified as `<owner>/<r
 
 ### Provider
 
-An AI coding agent/tool that consumes the setup artifacts. Examples: `claude`, `codex`, `copilot`, `gemini`, `opencode`. Each provider has its own subdirectory under `.ai/` (mirroring its target config directory name) and its own target config directories in the repo.
+An AI coding agent/tool that consumes the setup artifacts. Examples: `claude`, `codex`, `copilot`, `opencode`, `kiro`. Providers consume shared artifacts such as `AGENTS.md` and `skills/` when they support them, and use provider-specific source directories only for artifacts that need provider-native targets.
 
 ### `.ai/` Directory
 
@@ -146,7 +146,7 @@ Local setup roots are identified by `version: "*"`, not by a specific package ke
 
 ### Provider Registry
 
-A static mapping built into the CLI (`src/lib/provider-registry.ts`) that declares, for each supported provider: its canonical name and its symlink rules (source path → target path). File sources map to file targets, directory sources map to directory targets, and root Project Instruction Files are represented as normal provider rules. MVP providers: `claude` and `codex`. Adding a new provider requires a CLI release.
+A static mapping built into the CLI (`src/lib/provider-registry.ts`) that declares, for each supported provider: its canonical name and its symlink rules (source path → target path). File sources map to file targets, directory sources map to directory targets, and root Project Instruction Files are represented as normal provider rules. Adding a new provider requires a CLI release.
 
 ### Install Summary
 

@@ -11,6 +11,26 @@ export interface ProviderEntry {
   rules: SymlinkRule[]
 }
 
+const AGENTS_INSTRUCTION_RULE: SymlinkRule = { source: '.ai/AGENTS.md', target: 'AGENTS.md' }
+const GENERIC_SKILLS_RULE: SymlinkRule = { source: '.ai/skills', target: '.agents/skills' }
+const GENERIC_AGENT_RULES: SymlinkRule[] = [
+  AGENTS_INSTRUCTION_RULE,
+  GENERIC_SKILLS_RULE,
+]
+const GENERIC_AGENT_PROVIDER_NAMES = [
+  'pi',
+  'opencode',
+  'cursor',
+  'copilot',
+  'windsurf',
+  'antigravity',
+  'amp',
+  'zed',
+]
+const GENERIC_AGENT_PROVIDER_ENTRIES = Object.fromEntries(
+  GENERIC_AGENT_PROVIDER_NAMES.map(name => [name, { name, rules: GENERIC_AGENT_RULES }]),
+)
+
 export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
   claude: {
     name: 'claude',
@@ -25,10 +45,25 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
   codex: {
     name: 'codex',
     rules: [
-      { source: '.ai/AGENTS.md', target: 'AGENTS.md' },
+      AGENTS_INSTRUCTION_RULE,
       { source: '.ai/.codex/agents', target: '.codex/agents' },
       { source: '.ai/.codex/commands', target: '.codex/prompts' },
-      { source: '.ai/skills', target: '.agents/skills' },
+      GENERIC_SKILLS_RULE,
+    ],
+  },
+  ...GENERIC_AGENT_PROVIDER_ENTRIES,
+  cline: {
+    name: 'cline',
+    rules: [
+      AGENTS_INSTRUCTION_RULE,
+      { source: '.ai/skills', target: '.cline/skills' },
+    ],
+  },
+  kiro: {
+    name: 'kiro',
+    rules: [
+      AGENTS_INSTRUCTION_RULE,
+      { source: '.ai/skills', target: '.kiro/skills' },
     ],
   },
 }

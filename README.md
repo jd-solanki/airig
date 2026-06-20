@@ -146,8 +146,23 @@ GitHub PAT scoped only to the Setup Release repository with:
 
 `airig` currently supports these AI providers:
 
-- Codex
-- Claude
-- [More](https://github.com/jd-solanki/airig/issues/37) will be added soon
+| Provider | Instruction target | Skills target | Extra supported artifacts |
+| --- | --- | --- | --- |
+| Claude | `CLAUDE.md` | `.claude/skills/` | `.claude/agents/`, `.claude/commands/`, `.claude/hooks/` |
+| Codex | `AGENTS.md` | `.agents/skills/` | `.codex/agents/`, `.codex/prompts/` from `.ai/.codex/commands/` |
+| Pi | `AGENTS.md` | `.agents/skills/` | - |
+| OpenCode | `AGENTS.md` | `.agents/skills/` | - |
+| Cursor | `AGENTS.md` | `.agents/skills/` | - |
+| Copilot | `AGENTS.md` | `.agents/skills/` | - |
+| Windsurf | `AGENTS.md` | `.agents/skills/` | - |
+| Antigravity | `AGENTS.md` | `.agents/skills/` | - |
+| Cline | `AGENTS.md` | `.cline/skills/` | - |
+| Amp | `AGENTS.md` | `.agents/skills/` | - |
+| Kiro | `AGENTS.md` | `.kiro/skills/` | - |
+| Zed | `AGENTS.md` | `.agents/skills/` | - |
+
+When a provider supports the generic `AGENTS.md` instruction file and `.agents/skills/`
+directory, `airig` uses those shared targets instead of linking duplicate
+provider-specific instruction or skills paths.
 
 Want to add your favorite provider? It's really easy, have a look at [providers registry](./src/lib/provider-registry.ts). Contributions are always welcome!
