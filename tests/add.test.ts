@@ -246,9 +246,10 @@ describe('runAdd', () => {
       },
     })
 
-    await expect(runAdd('owner/repo@v2.0.0')).rejects.toThrow(
-      'Use airig update <owner/repo>@<version> to move versions.',
-    )
+    await expect(runAdd('owner/repo@v2.0.0')).rejects.toMatchObject({
+      message: 'owner/repo is already installed at v1.2.3.',
+      fix: 'Use airig update <owner/repo>@<version> to move versions.',
+    })
 
     expect(fetchReleaseInfo).not.toHaveBeenCalled()
     expect(downloadAsset).not.toHaveBeenCalled()
@@ -371,9 +372,10 @@ describe('runAdd', () => {
       },
     }, globalAiJsonPath())
 
-    await expect(runAdd('owner/repo@v2.0.0', { global: true })).rejects.toThrow(
-      'Use airig update <owner/repo>@<version> to move versions.',
-    )
+    await expect(runAdd('owner/repo@v2.0.0', { global: true })).rejects.toMatchObject({
+      message: 'owner/repo is already installed at v1.2.3.',
+      fix: 'Use airig update <owner/repo>@<version> to move versions.',
+    })
 
     expect(fetchReleaseInfo).not.toHaveBeenCalled()
     expect(downloadAsset).not.toHaveBeenCalled()

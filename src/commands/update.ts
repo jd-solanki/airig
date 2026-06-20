@@ -15,6 +15,7 @@ import {
   targetPointsToSource,
   targetSourcePairs,
 } from '../lib/target-links'
+import { diagnostics } from '../diagnostics'
 
 interface UpdateOptions {
   global?: boolean
@@ -29,24 +30,20 @@ export async function runUpdate(pkg: string, options: UpdateOptions = {}): Promi
   const entry = aiJson.packages[packageKey]
 
   if (!entry) {
-    throw new Error(
-      `Package "${packageKey}" is not installed.\n` +
-      '  Install it first with: airig add <owner/repo>[@version]',
-    )
+    throw diagnostics.AIRIG_R0001({
+      packageKey,
+      hint: 'Install it first with: airig add <owner/repo>[@version]',
+    })
   }
   if (entry.version === '*') {
-    throw new Error(`Package "${packageKey}" is a local setup and cannot be updated as a remote Setup Release.`)
+    throw diagnostics.AIRIG_R0007({ packageKey })
   }
 
   const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN })
   const { tag: resolvedTag, assetDownloadUrl, immutable } = await fetchReleaseInfo(owner, repo, tag, octokit)
 
   if (!immutable) {
-    throw new Error(
-      `Security restriction: release ${resolvedTag} of ${owner}/${repo} is not immutable.\n` +
-      '  Updating from mutable releases is unsafe — assets can be swapped after you review them.\n' +
-      '  Ask the package author to enable immutable releases in their repo settings.',
-    )
+    throw diagnostics.AIRIG_R0003({ owner, repo, tag: resolvedTag, action: 'Updating from' })
   }
 
   console.log(`  Downloading ${owner}/${repo}@${resolvedTag}...`)
@@ -134,11 +131,4 @@ export const updateCommand = new Command('update')
   .description('Refresh an installed Setup Release at an exact immutable version')
   .argument('<package>', 'Package to update, e.g. owner/repo@1.2.0')
   .option('--global', 'Update an installed release in the user Global AI Setup at ~/.ai')
-  .action(async (pkg: string, options: UpdateOptions) => {
-    try {
-      await runUpdate(pkg, options)
-    } catch (err) {
-      console.error(`✖ ${(err as Error).message}`)
-      process.exit(1)
-    }
-  })
+  .action(runUpdate)

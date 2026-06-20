@@ -33,6 +33,7 @@ import {
   resolveSetupScope,
   type SetupScope,
 } from '../lib/setup-scope'
+import { diagnostics } from '../diagnostics'
 
 interface AddOptions {
   global?: boolean
@@ -60,10 +61,7 @@ export async function runAdd(pkg: string, options: AddOptions = {}): Promise<voi
   const existingEntry = aiJson.packages[packageKey]
 
   if (existingEntry && inputTag && inputTag !== existingEntry.version) {
-    throw new Error(
-      `${packageKey} is already installed at ${existingEntry.version}.\n` +
-      '  Use airig update <owner/repo>@<version> to move versions.',
-    )
+    throw diagnostics.AIRIG_R0002({ packageKey, installedVersion: existingEntry.version })
   }
 
   const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN })
@@ -71,11 +69,7 @@ export async function runAdd(pkg: string, options: AddOptions = {}): Promise<voi
   const { tag: resolvedTag, assetDownloadUrl, immutable } = await fetchReleaseInfo(owner, repo, requestedTag, octokit)
 
   if (!immutable) {
-    throw new Error(
-      `Security restriction: release ${resolvedTag} of ${owner}/${repo} is not immutable.\n` +
-      '  Installing mutable releases is unsafe — assets can be swapped after you review them.\n' +
-      '  Ask the package author to enable immutable releases in their repo settings.',
-    )
+    throw diagnostics.AIRIG_R0003({ owner, repo, tag: resolvedTag, action: 'Installing' })
   }
 
   console.log(`  Downloading ${owner}/${repo}@${resolvedTag}...`)
@@ -156,11 +150,10 @@ async function assertNoSourceConflicts(
 
   if (conflicts.length === 0) return
 
-  throw new Error(
-    `Conflicts detected — ${packageKey} would overwrite existing .ai source files:\n` +
-    conflicts.map(artifact => `  ${path.join(scope.sourcePrefix, artifact)}`).join('\n') + '\n' +
-    '  Remove the conflicting files, then run add again.',
-  )
+  throw diagnostics.AIRIG_R0004({
+    packageKey,
+    files: conflicts.map(artifact => `  ${path.join(scope.sourcePrefix, artifact)}`).join('\n'),
+  })
 }
 
 function emptyLocalOverridePlan(): LocalOverridePlan {
@@ -237,7 +230,7 @@ async function runAddGlobalLocal(): Promise<void> {
   const globalRoot = globalSetupRoot()
   const sourceRepoRoot = globalLocalSourceRepoRoot(globalRoot)
   if (path.resolve(sourceRepoRoot) === path.resolve(globalRoot)) {
-    throw new Error('add --global . must be run from a setup repository, not from the Global AI Setup root ~/.ai.')
+    throw diagnostics.AIRIG_R0008()
   }
 
   const sourceRoot = globalLocalSourceRoot(globalRoot)
@@ -307,13 +300,12 @@ function assertNoRemoteConflicts(
   const conflicts = findRemotePackageConflicts(aiJson, packageKey, providers, artifacts)
   if (conflicts.length === 0) return
 
-  throw new Error(
-    `Conflicts detected — the following symlinks are already owned by another package:\n` +
-    conflicts
+  throw diagnostics.AIRIG_R0005({
+    conflicts: conflicts
       .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
-      .join('\n') + '\n' +
-    '  Remove the conflicting files first with: airig remove',
-  )
+      .join('\n'),
+    command: 'airig remove',
+  })
 }
 
 async function assertNoTargetConflicts(
@@ -336,7 +328,7 @@ async function reconcileRemoteGlobalPackageLinks(
   selectedLabels: string[],
 ): Promise<void> {
   if (!aiJson.packages[packageKey]) {
-    throw new Error(`Package "${packageKey}" is not installed.`)
+    throw diagnostics.AIRIG_R0001({ packageKey })
   }
 
   const scope = resolveSetupScope({ global: true })
@@ -344,13 +336,12 @@ async function reconcileRemoteGlobalPackageLinks(
   const conflicts = findRemotePackageConflicts(aiJson, packageKey, providers, selected)
 
   if (conflicts.length > 0) {
-    throw new Error(
-      `Conflicts detected — the following symlinks are already owned by another package:\n` +
-      conflicts
+    throw diagnostics.AIRIG_R0005({
+      conflicts: conflicts
         .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
-        .join('\n') + '\n' +
-      '  Remove the conflicting files first with: airig remove',
-    )
+        .join('\n'),
+      command: 'airig remove',
+    })
   }
 
   const localOverridePlan = planLocalOverrides(aiJson, packageKey, providers, selected, scope)
@@ -382,7 +373,7 @@ async function reconcileGlobalLocalPackageLinks(
   scope: SetupScope,
 ): Promise<void> {
   if (!aiJson.packages[packageKey]) {
-    throw new Error(`Package "${packageKey}" is not installed.`)
+    throw diagnostics.AIRIG_R0001({ packageKey })
   }
 
   const selected = [...new Set(selectedLabels)]
@@ -400,11 +391,4 @@ export const addCommand = new Command('add')
   .description('Interactively add active AI Setup artifacts')
   .argument('<package>', 'Package to add, e.g. owner/repo, owner/repo@1.2.0, or .')
   .option('--global', 'Install into the user Global AI Setup at ~/.ai')
-  .action(async (pkg: string, options: AddOptions) => {
-    try {
-      await runAdd(pkg, options)
-    } catch (err) {
-      console.error(`✖ ${(err as Error).message}`)
-      process.exit(1)
-    }
-  })
+  .action(runAdd)

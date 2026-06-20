@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { diagnostics } from '../diagnostics'
 
 // ── User path (unauthenticated) ──────────────────────────────────────────
 
@@ -35,7 +36,7 @@ export async function fetchReleaseInfo(
   const asset = assets.find(a => a.name === 'ai.zip')
   if (!asset) {
     const ref = tag ?? 'latest'
-    throw new Error(`No ai.zip asset found in release "${ref}" of ${owner}/${repo}`)
+    throw diagnostics.AIRIG_R0011({ ref, owner, repo })
   }
 
   return { tag: releaseTag, assetDownloadUrl: asset.browser_download_url, immutable }
@@ -44,7 +45,7 @@ export async function fetchReleaseInfo(
 export async function downloadAsset(url: string): Promise<Buffer> {
   const response = await fetch(url)
   if (!response.ok) {
-    throw new Error(`Failed to download asset: HTTP ${response.status} ${response.statusText}`)
+    throw diagnostics.AIRIG_R0012({ status: response.status, statusText: response.statusText })
   }
   return Buffer.from(await response.arrayBuffer())
 }
@@ -68,11 +69,7 @@ export async function getImmutableReleasesStatus(
       if (status === 404) return { enabled: false, enforced_by_owner: false }
       // The /immutable-releases endpoint requires auth even on public repos
       if (status === 401) {
-        throw new Error(
-          'Verifying release immutability requires a GitHub token (even for public repos).\n' +
-          '  Set GITHUB_TOKEN and retry:  export GITHUB_TOKEN=ghp_...\n' +
-          '  Generate a token at: https://github.com/settings/tokens',
-        )
+        throw diagnostics.AIRIG_R0013({ cause: err })
       }
     }
     throw err
@@ -104,43 +101,27 @@ function interpretError(err: unknown, step: PublishStep, ctx: { owner: string; r
   const firstValidationError = err.response?.data?.errors?.[0]
 
   if (status === 401) {
-    return new Error(
-      'GITHUB_TOKEN is invalid or expired.\n  Generate a new token at: https://github.com/settings/tokens',
-    )
+    return diagnostics.AIRIG_R0014({ cause: err })
   }
 
   if (status === 403) {
-    return new Error(
-      `Token lacks write access to ${ctx.owner}/${ctx.repo}.\n` +
-      '  Classic PAT needs the "repo" scope.\n' +
-      '  Fine-grained PAT needs "Contents: Read and write".',
-    )
+    return diagnostics.AIRIG_R0015({ owner: ctx.owner, repo: ctx.repo, cause: err })
   }
 
   if (status === 404 && step === 'create-release') {
-    return new Error(
-      `Repository ${ctx.owner}/${ctx.repo} not found or the token has no access to it.\n` +
-      '  Check the git remote URL and token permissions.',
-    )
+    return diagnostics.AIRIG_R0016({ owner: ctx.owner, repo: ctx.repo, cause: err })
   }
 
   if (status === 422 && firstValidationError?.code === 'already_exists' && firstValidationError?.field === 'tag_name') {
-    return new Error(
-      `A release for tag ${ctx.tag} already exists in ${ctx.owner}/${ctx.repo}.\n` +
-      '  Immutable releases cannot be deleted or have their tag reused.\n' +
-      '  Bump the version, push a new tag, and retry.',
-    )
+    return diagnostics.AIRIG_R0017({ owner: ctx.owner, repo: ctx.repo, tag: ctx.tag, cause: err })
   }
 
   if (status === 422 && step === 'upload-asset' && firstValidationError?.code === 'already_exists') {
-    return new Error(
-      'An asset named ai.zip already exists on a stale draft release (leftover from a previous failed publish).\n' +
-      `  Delete stale drafts at: https://github.com/${ctx.owner}/${ctx.repo}/releases`,
-    )
+    return diagnostics.AIRIG_R0018({ owner: ctx.owner, repo: ctx.repo, cause: err })
   }
 
   const apiMessage = err.response?.data?.message ?? String(err)
-  return new Error(`GitHub API error (HTTP ${status}): ${apiMessage}`)
+  return diagnostics.AIRIG_R0019({ status, message: apiMessage, cause: err })
 }
 
 async function deleteDraft(octokit: Octokit, owner: string, repo: string, releaseId: number): Promise<void> {

@@ -9,6 +9,7 @@ import {
   targetPointsToSource,
   targetSourcePairs,
 } from './target-links'
+import { diagnostics } from '../diagnostics'
 
 export type SkipReason = 'already-linked' | 'conflict-real-file' | 'conflict-wrong-symlink'
 
@@ -130,13 +131,11 @@ function assertNoBlockingSkips(skipped: SkippedEntry[]): void {
   const conflicts = skipped.filter(entry => entry.reason !== 'already-linked')
   if (conflicts.length === 0) return
 
-  throw new Error(
-    `Conflicts detected — the following target paths could not be linked:\n` +
-    conflicts
+  throw diagnostics.AIRIG_R0010({
+    conflicts: conflicts
       .map(conflict => `  ${conflict.path}  (${conflict.reason})`)
-      .join('\n') + '\n' +
-    '  Remove or move the conflicting files, then run the command again.',
-  )
+      .join('\n'),
+  })
 }
 
 export function findRemotePackageConflicts(
@@ -209,7 +208,7 @@ export async function reconcilePackageLinks(
   scopedLabels = selectedLabels,
 ): Promise<ReconcileLinkResult> {
   if (!aiJson.packages[packageKey]) {
-    throw new Error(`Package "${packageKey}" is not installed.`)
+    throw diagnostics.AIRIG_R0001({ packageKey })
   }
 
   const selected = [...new Set(selectedLabels)]
@@ -221,13 +220,12 @@ export async function reconcilePackageLinks(
   const conflicts = findRemotePackageConflicts(aiJson, packageKey, providers, selected)
 
   if (conflicts.length > 0) {
-    throw new Error(
-      `Conflicts detected — the following symlinks are already owned by another package:\n` +
-      conflicts
+    throw diagnostics.AIRIG_R0005({
+      conflicts: conflicts
         .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
-        .join('\n') + '\n' +
-      '  Remove the conflicting package first with: airig remove <owner/repo>',
-    )
+        .join('\n'),
+      command: 'airig remove <owner/repo>',
+    })
   }
 
   await assertNoTargetConflicts(providers, selected)

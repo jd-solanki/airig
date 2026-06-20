@@ -5,14 +5,14 @@ import path from 'node:path'
 import { parseEnv } from 'node:util'
 import { create as createZip } from '../lib/zip'
 import { createOctokit, getImmutableReleasesStatus, publishRelease } from '../lib/github'
+import { diagnostics } from '../diagnostics'
 
 function resolveTag(tagArg: string | undefined): string {
   if (tagArg) return tagArg
   try {
     return execSync('git describe --tags --abbrev=0', { encoding: 'utf8' }).trim()
   } catch {
-    console.error('✖ No tag found. Pass a tag argument or create a git tag first.')
-    process.exit(1)
+    throw diagnostics.AIRIG_C0009()
   }
 }
 
@@ -28,14 +28,12 @@ function resolveOwnerRepo(): { owner: string; repo: string } {
   try {
     remote = execSync('git remote get-url origin', { encoding: 'utf8' }).trim()
   } catch {
-    console.error('✖ Could not read git remote origin. Is this a git repository with a remote?')
-    process.exit(1)
+    throw diagnostics.AIRIG_C0010()
   }
 
   const parsed = parseRemoteUrl(remote)
   if (!parsed) {
-    console.error(`✖ Could not parse owner/repo from remote: ${remote}`)
-    process.exit(1)
+    throw diagnostics.AIRIG_C0011({ remote })
   }
 
   return parsed
@@ -67,37 +65,27 @@ export const publishCommand = new Command('publish')
   .description('Publish project .ai artifacts as an immutable ai.zip release')
   .argument('[tag]', 'Git tag to release (defaults to latest local tag)')
   .action(async (tagArg: string | undefined) => {
-    try {
-      const token = await loadPublishGithubTokenFromCwd()
-      if (!token) {
-        console.error('✖ GITHUB_TOKEN is not set. Add it to .env in this directory or export it before running publish.')
-        console.error('  GITHUB_TOKEN=ghp_...')
-        process.exit(1)
-      }
-
-      const tag = resolveTag(tagArg)
-      const { owner, repo } = resolveOwnerRepo()
-
-      const octokit = createOctokit(token)
-
-      // Setup Releases must be immutable so users can trust ai.zip won't be swapped after publishing.
-      const immutable = await getImmutableReleasesStatus(owner, repo, octokit)
-      if (!immutable.enabled) {
-        console.error(`✖ Immutable releases are not enabled for ${owner}/${repo}.`)
-        console.error(`  Enable it at: https://github.com/${owner}/${repo}/settings`)
-        console.error('  Docs: https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository')
-        process.exit(1)
-      }
-
-      const zipPath = path.join(process.cwd(), 'ai.zip')
-      await createPublishZip(zipPath)
-
-      const url = await publishRelease({ owner, repo, tag, assetPath: zipPath, octokit })
-      await rm(zipPath, { force: true })
-
-      console.log(`✔ Published: ${url}`)
-    } catch (err) {
-      console.error(`✖ ${err instanceof Error ? err.message : String(err)}`)
-      process.exit(1)
+    const token = await loadPublishGithubTokenFromCwd()
+    if (!token) {
+      throw diagnostics.AIRIG_C0012()
     }
+
+    const tag = resolveTag(tagArg)
+    const { owner, repo } = resolveOwnerRepo()
+
+    const octokit = createOctokit(token)
+
+    // Setup Releases must be immutable so users can trust ai.zip won't be swapped after publishing.
+    const immutable = await getImmutableReleasesStatus(owner, repo, octokit)
+    if (!immutable.enabled) {
+      throw diagnostics.AIRIG_R0021({ owner, repo })
+    }
+
+    const zipPath = path.join(process.cwd(), 'ai.zip')
+    await createPublishZip(zipPath)
+
+    const url = await publishRelease({ owner, repo, tag, assetPath: zipPath, octokit })
+    await rm(zipPath, { force: true })
+
+    console.log(`✔ Published: ${url}`)
   })

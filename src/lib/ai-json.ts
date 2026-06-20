@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
+import { diagnostics } from '../diagnostics'
 
 export interface PackageEntry {
   version: string
@@ -19,30 +20,27 @@ function validate(data: unknown, aiJsonPath = AI_JSON_PATH): AiJson {
     typeof (data as Record<string, unknown>).packages !== 'object' ||
     (data as Record<string, unknown>).packages === null
   ) {
-    throw new Error(
-      `${aiJsonPath} is malformed: expected { "packages": {} }\n` +
-      `  Fix: restore the missing top-level keys, or delete ${aiJsonPath} to reset it.`,
-    )
+    throw diagnostics.AIRIG_C0003({ aiJsonPath })
   }
 
   const packages: Record<string, PackageEntry> = {}
   for (const [key, rawEntry] of Object.entries((data as { packages: Record<string, unknown> }).packages)) {
     if (typeof rawEntry !== 'object' || rawEntry === null) {
-      throw new Error(`${aiJsonPath} is malformed: package "${key}" must be an object.`)
+      throw diagnostics.AIRIG_C0004({ aiJsonPath, packageKey: key })
     }
 
     const entry = rawEntry as Record<string, unknown>
     if (typeof entry.version !== 'string' || entry.version.length === 0) {
-      throw new Error(`${aiJsonPath} is malformed: package "${key}" must have a version string.`)
+      throw diagnostics.AIRIG_C0005({ aiJsonPath, packageKey: key })
     }
     if (key === '.' && entry.version !== '*') {
-      throw new Error(`${aiJsonPath} is malformed: local package "." must use version "*".`)
+      throw diagnostics.AIRIG_C0006({ aiJsonPath })
     }
     if (entry.linked !== undefined && (
       !Array.isArray(entry.linked) ||
       entry.linked.some(label => typeof label !== 'string' || label.length === 0)
     )) {
-      throw new Error(`${aiJsonPath} is malformed: package "${key}" linked must be a string array.`)
+      throw diagnostics.AIRIG_C0007({ aiJsonPath, packageKey: key })
     }
 
     packages[key] = {
@@ -83,14 +81,14 @@ export function removePackage(data: AiJson, key: string): void {
 
 export function setLinked(data: AiJson, key: string, linked: string[]): void {
   if (!data.packages[key]) {
-    throw new Error(`Package "${key}" is not installed.`)
+    throw diagnostics.AIRIG_R0001({ packageKey: key })
   }
   data.packages[key].linked = [...new Set(linked)]
 }
 
 export function addLinked(data: AiJson, key: string, artifact: string): void {
   if (!data.packages[key]) {
-    throw new Error(`Package "${key}" is not installed.`)
+    throw diagnostics.AIRIG_R0001({ packageKey: key })
   }
   if (!data.packages[key].linked.includes(artifact)) {
     data.packages[key].linked.push(artifact)
@@ -107,9 +105,6 @@ function parseAiJson(raw: string, aiJsonPath: string): unknown {
     return JSON.parse(raw)
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
-    throw new Error(
-      `${aiJsonPath} is malformed: expected valid JSON.\n` +
-      `  Parser error: ${detail}`,
-    )
+    throw diagnostics.AIRIG_C0008({ aiJsonPath, detail, cause: err })
   }
 }

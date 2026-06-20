@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import extractZip from 'extract-zip'
 import { lstatIfExists } from './filesystem'
+import { diagnostics } from '../diagnostics'
 
 async function findSkillDirs(dir: string): Promise<string[]> {
   let entries: { name: string; isFile(): boolean; isDirectory(): boolean }[]
@@ -33,9 +34,11 @@ async function flattenSkills(skillsDir: string): Promise<void> {
   for (const dir of skillDirs) {
     const name = path.basename(dir)
     if (names.has(name)) {
-      throw new Error(
-        `Skill name collision: "${name}" appears at "${names.get(name)}" and "${dir}" in the package`,
-      )
+      throw diagnostics.AIRIG_R0022({
+        name,
+        firstPath: names.get(name) ?? '',
+        secondPath: dir,
+      })
     }
     names.set(name, dir)
   }
@@ -71,7 +74,7 @@ export async function withExtractedReleaseAi<T>(
 
     const extractedAiDir = path.join(extractDir, '.ai')
     if (!existsSync(extractedAiDir)) {
-      throw new Error('The release zip does not contain an .ai/ directory')
+      throw diagnostics.AIRIG_R0020()
     }
 
     const skillsSrc = path.join(extractedAiDir, 'skills')

@@ -350,7 +350,10 @@ describe('getImmutableReleasesStatus', () => {
       request: vi.fn().mockRejectedValue(authError),
     } as unknown as Octokit
 
-    await expect(getImmutableReleasesStatus('owner', 'repo', octokit)).rejects.toThrow('GITHUB_TOKEN')
+    await expect(getImmutableReleasesStatus('owner', 'repo', octokit)).rejects.toMatchObject({
+      message: 'Verifying release immutability requires a GitHub token (even for public repos).',
+      fix: expect.stringContaining('GITHUB_TOKEN'),
+    })
   })
 })
 

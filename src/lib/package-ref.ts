@@ -1,3 +1,5 @@
+import { diagnostics } from '../diagnostics'
+
 export interface PackageRef {
   owner: string
   repo: string
@@ -16,7 +18,7 @@ export function parsePackageRef(pkg: string): PackageRef {
 
   const slashIdx = ref.indexOf('/')
   if (slashIdx < 1 || slashIdx === ref.length - 1) {
-    throw new Error(`Invalid package reference "${pkg}". Expected: owner/repo or owner/repo@version`)
+    throw diagnostics.AIRIG_C0001({ pkg })
   }
 
   return { owner: ref.slice(0, slashIdx), repo: ref.slice(slashIdx + 1), tag }
@@ -25,7 +27,7 @@ export function parsePackageRef(pkg: string): PackageRef {
 export function parseExactPackageRef(pkg: string): Required<PackageRef> {
   const parsed = parsePackageRef(pkg)
   if (!parsed.tag) {
-    throw new Error(`Invalid package reference "${pkg}". Expected exact version: owner/repo@version`)
+    throw diagnostics.AIRIG_C0002({ pkg })
   }
   return parsed as Required<PackageRef>
 }

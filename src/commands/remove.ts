@@ -6,6 +6,7 @@ import { readAiJson, writeAiJson, removePackage, type AiJson } from '../lib/ai-j
 import { targetPathsForArtifact } from '../lib/provider-registry'
 import { unlinkFiles } from '../lib/linker'
 import { resolveSetupScope, type SetupScope } from '../lib/setup-scope'
+import { diagnostics } from '../diagnostics'
 
 interface RemoveOptions {
   global?: boolean
@@ -65,7 +66,7 @@ export async function runRemove(pkg?: string, options: RemoveOptions = {}): Prom
 function installedPackageKeys(aiJson: AiJson, requestedPackage?: string): string[] {
   const packageKeys = requestedPackage ? [requestedPackage] : Object.keys(aiJson.packages)
   if (packageKeys.length === 0) {
-    throw new Error('No AI Setup artifacts are installed.')
+    throw diagnostics.AIRIG_R0009()
   }
 
   return packageKeys
@@ -78,10 +79,10 @@ function assertPackagesInstalled(
 ): void {
   for (const packageKey of packageKeys) {
     if (!aiJson.packages[packageKey]) {
-      throw new Error(
-        `Package "${packageKey}" is not installed.\n` +
-        `  Check installed packages in ${manifestLabel}`,
-      )
+      throw diagnostics.AIRIG_R0001({
+        packageKey,
+        hint: `Check installed packages in ${manifestLabel}`,
+      })
     }
   }
 }
@@ -184,11 +185,4 @@ export const removeCommand = new Command('remove')
   .description('Interactively remove active AI Setup artifacts')
   .argument('[package]', 'Optional package to remove from, e.g. owner/repo or .')
   .option('--global', 'Remove from the user Global AI Setup at ~/.ai')
-  .action(async (pkg: string | undefined, options: RemoveOptions) => {
-    try {
-      await runRemove(pkg, options)
-    } catch (err) {
-      console.error(`✖ ${(err as Error).message}`)
-      process.exit(1)
-    }
-  })
+  .action(runRemove)

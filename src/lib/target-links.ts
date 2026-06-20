@@ -3,6 +3,7 @@ import { mkdir, readlink, symlink } from 'node:fs/promises'
 import path from 'node:path'
 import { lstatIfExists } from './filesystem'
 import { targetPathsForArtifact } from './provider-registry'
+import { diagnostics } from '../diagnostics'
 
 export interface TargetConflict {
   targetPath: string
@@ -44,13 +45,12 @@ export async function assertNoTargetConflicts(
 
   if (conflicts.length === 0) return
 
-  throw new Error(
-    `Conflicts detected — the following target paths are already occupied:\n` +
-    conflicts
+  throw diagnostics.AIRIG_R0006({
+    conflicts: conflicts
       .map(conflict => `  ${conflict.targetPath}  (${conflict.reason})`)
-      .join('\n') + '\n' +
-    `  Remove or move the conflicting files, then run ${retryCommand} again.`,
-  )
+      .join('\n'),
+    retryCommand,
+  })
 }
 
 export async function targetConflictFor(
