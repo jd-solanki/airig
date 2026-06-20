@@ -295,6 +295,42 @@ describe('runUpdate', () => {
     })
   })
 
+  it('does not add cline or kiro skill symlinks when AGENTS.md is linked', async () => {
+    await makeFile('.ai/AGENTS.md', '# old agents')
+    await makeFile('.ai/CLAUDE.md', '# old claude')
+    await makeFile('.ai/skills/tdd/SKILL.md', '# old tdd')
+    await makeSymlink('.ai/AGENTS.md', 'AGENTS.md')
+    await makeSymlink('.ai/CLAUDE.md', 'CLAUDE.md')
+    await makeSymlink('.ai/skills/tdd', '.agents/skills/tdd')
+    await makeSymlink('.ai/skills/tdd', '.claude/skills/tdd')
+    await seedAiJson({
+      packages: {
+        'owner/repo': { version: 'v1.0.0', linked: ['AGENTS.md', 'CLAUDE.md', 'skills/tdd'] },
+      },
+    })
+    const zipBuffer = await makeReleaseZip({
+      'AGENTS.md': '# new agents',
+      'CLAUDE.md': '# new claude',
+      'skills/tdd/SKILL.md': '# new tdd',
+    })
+    vi.mocked(fetchReleaseInfo).mockResolvedValue({
+      tag: 'v2.0.0',
+      assetDownloadUrl: 'https://example.test/ai.zip',
+      immutable: true,
+    })
+    vi.mocked(downloadAsset).mockResolvedValue(zipBuffer)
+
+    await runUpdate('owner/repo@v2.0.0')
+
+    expect((await lstat('AGENTS.md')).isSymbolicLink()).toBe(true)
+    expect((await lstat('CLAUDE.md')).isSymbolicLink()).toBe(true)
+    expect((await lstat('.agents/skills/tdd')).isSymbolicLink()).toBe(true)
+    expect((await lstat('.claude/skills/tdd')).isSymbolicLink()).toBe(true)
+    expect(existsSync('.cline/skills/tdd')).toBe(false)
+    expect(existsSync('.kiro/skills/tdd')).toBe(false)
+    expect(await readFile('.ai/skills/tdd/SKILL.md', 'utf-8')).toBe('# new tdd')
+  })
+
   it('errors when the package is not installed', async () => {
     await seedAiJson({ packages: {} })
 

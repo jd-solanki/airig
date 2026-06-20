@@ -54,6 +54,7 @@ export async function runUpdate(pkg: string, options: UpdateOptions = {}): Promi
     const newArtifactSet = new Set(newArtifacts)
     const previousVersion = entry.version
     const previousLinked = [...entry.linked]
+    const activeTargetsByArtifact = await activeTargetsForLinkedArtifacts(previousLinked, scope)
     const activeProviders = await activeProvidersForLinkedArtifacts(previousLinked, scope)
     const prunedLinked = previousLinked.filter(artifact => newArtifactSet.has(artifact))
     const deletedLinked = previousLinked.filter(artifact => !newArtifactSet.has(artifact))
@@ -66,13 +67,16 @@ export async function runUpdate(pkg: string, options: UpdateOptions = {}): Promi
       for (const targetPath of targetPathsForArtifact(artifact, activeProviders)) {
         targetsToUnlink.add(path.join(scope.targetRoot, targetPath))
       }
+      for (const targetPath of activeTargetsByArtifact.get(artifact) ?? []) {
+        targetsToUnlink.add(targetPath)
+      }
     }
     await unlinkFiles([...targetsToUnlink])
 
     entry.version = resolvedTag
     entry.linked = prunedLinked
 
-    await reconcileScopedPackageLinks(scope, activeProviders, prunedLinked)
+    await reconcileScopedPackageLinks(scope, activeProviders, activeTargetsByArtifact, prunedLinked)
     await writeAiJson(aiJson, scope.aiJsonPath)
 
     console.log(
@@ -80,6 +84,30 @@ export async function runUpdate(pkg: string, options: UpdateOptions = {}): Promi
       `(${prunedLinked.length} active file(s) refreshed, ${deletedLinked.length} pruned).`,
     )
   })
+}
+
+async function activeTargetsForLinkedArtifacts(
+  linkedArtifacts: string[],
+  scope: SetupScope,
+): Promise<Map<string, string[]>> {
+  const activeTargetsByArtifact = new Map<string, string[]>()
+
+  for (const artifact of linkedArtifacts) {
+    const sourcePath = path.join(scope.sourceRoot, artifact)
+    for (const targetPath of targetPathsForArtifact(artifact)) {
+      const absoluteTargetPath = path.join(scope.targetRoot, targetPath)
+      if (await targetPointsToSource(
+        absoluteTargetPath,
+        sourcePath,
+      )) {
+        const activeTargets = activeTargetsByArtifact.get(artifact) ?? []
+        activeTargets.push(absoluteTargetPath)
+        activeTargetsByArtifact.set(artifact, activeTargets)
+      }
+    }
+  }
+
+  return activeTargetsByArtifact
 }
 
 async function activeProvidersForLinkedArtifacts(
@@ -103,6 +131,8 @@ async function hasActiveProviderTarget(
   scope: SetupScope,
 ): Promise<boolean> {
   for (const artifact of linkedArtifacts) {
+    if (!canInferProviderFromArtifact(artifact)) continue
+
     for (const targetPath of targetPathsForArtifact(artifact, [provider])) {
       if (await targetPointsToSource(
         path.join(scope.targetRoot, targetPath),
@@ -116,15 +146,28 @@ async function hasActiveProviderTarget(
 
 async function reconcileScopedPackageLinks(
   scope: SetupScope,
-  providers: string[],
+  activeProviders: string[],
+  activeTargetsByArtifact: Map<string, string[]>,
   artifacts: string[],
 ): Promise<void> {
-  const targets = targetSourcePairs(scope.sourceRoot, scope.targetRoot, providers, artifacts)
+  const targets = targetSourcePairs(scope.sourceRoot, scope.targetRoot, activeProviders, artifacts)
+
+  for (const artifact of artifacts) {
+    for (const targetPath of activeTargetsByArtifact.get(artifact) ?? []) {
+      targets.set(targetPath, path.join(scope.sourceRoot, artifact))
+    }
+  }
+
   await assertNoTargetConflicts(targets, 'update')
 
   for (const [targetPath, sourcePath] of targets) {
     await createRelativeSymlinkIfMissing(sourcePath, targetPath)
   }
+}
+
+function canInferProviderFromArtifact(artifact: string): boolean {
+  // Root instruction files can be shared across providers, so they cannot prove selection.
+  return artifact.includes('/')
 }
 
 export const updateCommand = new Command('update')
