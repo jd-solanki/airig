@@ -71,9 +71,9 @@ describe('PROVIDER_REGISTRY', () => {
     })
   })
 
-  it('codex commands map to .codex/prompts', () => {
+  it('codex does not declare deprecated custom prompt rules', () => {
     const commandsRule = PROVIDER_REGISTRY.codex.rules.find(r => r.source.includes('commands'))
-    expect(commandsRule?.target).toBe('.codex/prompts')
+    expect(commandsRule).toBeUndefined()
   })
 
   it('uses generic instructions and skills for providers that support both', () => {
@@ -117,8 +117,8 @@ describe('rulesFor', () => {
 
   it('includes all provider rules when all providers are given', () => {
     const rules = rulesFor(Object.keys(PROVIDER_REGISTRY))
-    // claude(5) + codex(4) + generic providers(16) + cline(2) + kiro(2)
-    expect(rules).toHaveLength(29)
+    // claude(5) + codex(3) + generic providers(16) + cline(2) + kiro(2)
+    expect(rules).toHaveLength(28)
   })
 })
 
@@ -136,10 +136,11 @@ describe('targetPathsForArtifact', () => {
     ])
   })
 
+  it('does not map deprecated Codex custom prompt artifacts', () => {
+    expect(targetPathsForArtifact('.codex/commands/review.md', ['codex'])).toEqual([])
+  })
+
   it('continues mapping directory children into provider target directories', () => {
-    expect(targetPathsForArtifact('.codex/commands/review.md', ['codex'])).toEqual([
-      '.codex/prompts/review.md',
-    ])
     expect(targetPathsForArtifact('skills/tdd', ['cline', 'kiro'])).toEqual([
       '.cline/skills/tdd',
       '.kiro/skills/tdd',

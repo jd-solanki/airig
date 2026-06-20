@@ -302,7 +302,7 @@ describe('deriveTargetOwnership', () => {
     const ownership = deriveTargetOwnership({
       packages: {
         '.': { version: '*', linked: ['skills/local'] },
-        'owner/repo': { version: '1.0.0', linked: ['.codex/commands/review.md'] },
+        'owner/repo': { version: '1.0.0', linked: ['.codex/agents/reviewer.md'] },
       },
     })
 
@@ -318,11 +318,11 @@ describe('deriveTargetOwnership', () => {
       artifact: 'skills/local',
       targetPath: '.agents/skills/local',
     }])
-    expect(ownership.get('.codex/prompts/review.md')).toEqual([{
+    expect(ownership.get('.codex/agents/reviewer.md')).toEqual([{
       packageKey: 'owner/repo',
       version: '1.0.0',
-      artifact: '.codex/commands/review.md',
-      targetPath: '.codex/prompts/review.md',
+      artifact: '.codex/agents/reviewer.md',
+      targetPath: '.codex/agents/reviewer.md',
     }])
   })
 
