@@ -29,7 +29,7 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
-    "release": "bumpp",
+    "release": "pnpm test && pnpm bumpp",
     "test": "vitest run",
     "test:watch": "vitest",
     "pkg:link": "pnpm add -g .",
