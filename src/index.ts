@@ -8,7 +8,7 @@ import { updateCommand } from './commands/update'
 import { reportCliError } from './diagnostics'
 import packageJson from '../package.json' with { type: 'json' }
 
-updateNotifier({ pkg: packageJson }).notify()
+updateNotifier({ pkg: packageJson }).notify({ isGlobal: true })
 
 const program = new Command('airig')
   .description('Manage project-scoped AI Setup artifacts')
