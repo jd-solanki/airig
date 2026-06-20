@@ -149,7 +149,7 @@ GitHub PAT scoped only to the Setup Release repository with:
 | Provider | Instruction target | Skills target | Extra supported artifacts |
 | --- | --- | --- | --- |
 | Claude | `CLAUDE.md` | `.claude/skills/` | `.claude/agents/`, `.claude/commands/`, `.claude/hooks/` |
-| Codex | `AGENTS.md` | `.agents/skills/` | `.codex/agents/`, `.codex/prompts/` from `.ai/.codex/commands/` |
+| Codex | `AGENTS.md` | `.agents/skills/` | `.codex/agents/` |
 | Pi | `AGENTS.md` | `.agents/skills/` | - |
 | OpenCode | `AGENTS.md` | `.agents/skills/` | - |
 | Cursor | `AGENTS.md` | `.agents/skills/` | - |
@@ -160,9 +160,5 @@ GitHub PAT scoped only to the Setup Release repository with:
 | Amp | `AGENTS.md` | `.agents/skills/` | - |
 | Kiro | `AGENTS.md` | `.kiro/skills/` | - |
 | Zed | `AGENTS.md` | `.agents/skills/` | - |
-
-When a provider supports the generic `AGENTS.md` instruction file and `.agents/skills/`
-directory, `airig` uses those shared targets instead of linking duplicate
-provider-specific instruction or skills paths.
 
 Want to add your favorite provider? It's really easy, have a look at [providers registry](./src/lib/provider-registry.ts). Contributions are always welcome!

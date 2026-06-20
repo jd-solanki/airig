@@ -46,9 +46,8 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
     name: 'codex',
     rules: [
       AGENTS_INSTRUCTION_RULE,
-      { source: '.ai/.codex/agents', target: '.codex/agents' },
-      { source: '.ai/.codex/commands', target: '.codex/prompts' },
       GENERIC_SKILLS_RULE,
+      { source: '.ai/.codex/agents', target: '.codex/agents' },
     ],
   },
   ...GENERIC_AGENT_PROVIDER_ENTRIES,
