@@ -25,6 +25,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
       - name: Set up Vite+
         uses: voidzero-dev/setup-vp@v1
         with:
@@ -51,10 +54,12 @@ jobs:
             cli-v*)
               echo "dir=packages/cli" >> "${GITHUB_OUTPUT}"
               echo "prefix=cli-v" >> "${GITHUB_OUTPUT}"
+              echo "name=@envolix/cli" >> "${GITHUB_OUTPUT}"
               ;;
             env-parser-v*)
               echo "dir=packages/env-parser" >> "${GITHUB_OUTPUT}"
               echo "prefix=env-parser-v" >> "${GITHUB_OUTPUT}"
+              echo "name=@envolix/env-parser" >> "${GITHUB_OUTPUT}"
               ;;
             *)
               echo "::error title=Unsupported release tag::${GITHUB_REF_NAME}"
@@ -84,13 +89,24 @@ jobs:
         env:
           TAG_PREFIX: ${{ steps.package.outputs.prefix }}
 
-      - name: Check npm version
+      - name: Validate package release
         shell: bash
         run: |
           set -euo pipefail
 
           package_name="$(node -p "require('./${PACKAGE_DIR}/package.json').name")"
           package_version="$(node -p "require('./${PACKAGE_DIR}/package.json').version")"
+          tag_version="${GITHUB_REF_NAME#${TAG_PREFIX}}"
+
+          if [ "${package_name}" != "${EXPECTED_PACKAGE}" ]; then
+            echo "::error title=Package mismatch::${PACKAGE_DIR}/package.json is ${package_name}, expected ${EXPECTED_PACKAGE} for ${GITHUB_REF_NAME}."
+            exit 1
+          fi
+
+          if [ "${package_version}" != "${tag_version}" ]; then
+            echo "::error title=Tag version mismatch::${GITHUB_REF_NAME} points to ${tag_version}, but ${PACKAGE_DIR}/package.json is ${package_version}."
+            exit 1
+          fi
 
           if npm view "${package_name}@${package_version}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
             echo "::error title=Version already published::${package_name}@${package_version} already exists on npm. Bump ${PACKAGE_DIR}/package.json before pushing ${GITHUB_REF_NAME}."
@@ -98,6 +114,8 @@ jobs:
           fi
         env:
           PACKAGE_DIR: ${{ steps.package.outputs.dir }}
+          TAG_PREFIX: ${{ steps.package.outputs.prefix }}
+          EXPECTED_PACKAGE: ${{ steps.package.outputs.name }}
 
       - name: Run checks
         run: vp check
@@ -108,22 +126,21 @@ jobs:
       - name: Build packages
         run: vp run -r pack
 
-      - name: Generate changelog and publish
+      - name: Publish package
         shell: bash
         run: |
           set -euo pipefail
 
-          npx changelogen@latest \
-            --dir "${PACKAGE_DIR}" \
-            --from "${FROM_REF}" \
-            --to "${GITHUB_REF_NAME}" \
-            --publish
+          pack_output="$(pnpm --dir "${PACKAGE_DIR}" pack --pack-destination "${RUNNER_TEMP}")"
+          echo "${pack_output}"
+
+          tarball="$(printf '%s\n' "${pack_output}" | tail -n 1)"
+          npm publish "${tarball}" --access public
         env:
           PACKAGE_DIR: ${{ steps.package.outputs.dir }}
-          FROM_REF: ${{ steps.previous-tag.outputs.from }}
 
       - name: Create GitHub release
-        run: npx changelogen@latest gh release "${GITHUB_REF_NAME}" --dir "${PACKAGE_DIR}" --token "${GITHUB_TOKEN}"
+        run: npx changelogithub@latest --from "${FROM_REF}" --to "${GITHUB_REF_NAME}" --github "${GITHUB_REPOSITORY}" --name "${GITHUB_REF_NAME}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PACKAGE_DIR: ${{ steps.package.outputs.dir }}
+          FROM_REF: ${{ steps.previous-tag.outputs.from }}

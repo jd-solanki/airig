@@ -61,25 +61,35 @@ The publish workflow should:
 1. Trigger on package-scoped tags, for example `cli-v*` and `env-parser-v*`.
 2. Map the tag prefix to one package directory.
 3. Find the previous tag with the same package prefix.
-4. Run checks, tests, and package builds before publishing.
-5. Run changelogen with explicit `--dir`, `--from`, and `--to`.
-6. Publish from the selected package directory with npm trusted publishing.
-7. Create or update the GitHub release for the package tag.
+4. Validate that the tag suffix matches the selected package's `package.json` version.
+5. Run checks, tests, and package builds before publishing.
+6. Pack the selected package with pnpm, then publish the tarball with npm trusted publishing.
+7. Create or update the GitHub release for the package tag with changelogithub using explicit `--from` and `--to`.
 
 See [MONOREPO_WORKFLOW.yml](MONOREPO_WORKFLOW.yml) for a concrete GitHub Actions workflow.
 
 ## Critical caveat
 
-Never rely on changelogen's default `from` tag in a monorepo. The default resolves the latest git tag for the repository, not the latest tag for the package being released. If `cli-v0.2.0` is the latest repo tag and you are releasing `env-parser-v0.1.3`, the default range can be wrong.
+Never rely on a release-note tool's default `from` tag in a monorepo. Defaults often resolve the latest git tag for the repository, not the latest tag for the package being released. If `cli-v0.2.0` is the latest repo tag and you are releasing `env-parser-v0.1.3`, the default range can be wrong.
 
-Always derive the previous same-package tag and pass it explicitly:
+Always derive the previous same-package tag and pass it explicitly to changelogithub:
 
 ```bash
-npx changelogen \
-  --dir packages/env-parser \
+npx changelogithub@latest \
   --from env-parser-v0.1.2 \
   --to env-parser-v0.1.3 \
-  --publish
+  --github owner/repo \
+  --name env-parser-v0.1.3
 ```
 
 If there is no previous same-package tag, still pass an explicit base ref such as the initial commit or an intentional package introduction commit.
+
+Publish the npm package by packing with pnpm and publishing the generated tarball with npm:
+
+```bash
+pack_output="$(pnpm --dir packages/env-parser pack --pack-destination "${RUNNER_TEMP:-/tmp}")"
+tarball="$(printf '%s\n' "${pack_output}" | tail -n 1)"
+npm publish "${tarball}" --access public
+```
+
+This keeps pnpm workspace dependency rewriting while still using npm for trusted publishing/OIDC.
