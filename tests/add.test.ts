@@ -239,6 +239,42 @@ describe('runAdd', () => {
     expect(aiJson.packages['.'].linked).toEqual(['skills/tdd'])
   })
 
+  it('offers only author-created artifacts, not ones owned by remote packages, for add .', async () => {
+    // Artifacts copied in by a remote package install...
+    await makeFile('.ai/skills/their-skill/SKILL.md', '# Theirs')
+    await makeFile('.ai/AGENTS.md', '# Theirs')
+    // ...plus the author's own new skill.
+    await makeFile('.ai/skills/my-skill/SKILL.md', '# Mine')
+    await writeAiJson({
+      packages: {
+        'x/author': { version: 'v1.0.0', linked: ['skills/their-skill', 'AGENTS.md'] },
+      },
+    })
+
+    let offered: string[] = []
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['claude']
+      if (message === 'Select local files to add:') {
+        offered = (prompt as { choices: { value: string }[] }).choices.map(c => c.value)
+        return ['skills/my-skill']
+      }
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await runAdd('.')
+
+    expect(offered).toEqual(['skills/my-skill'])
+    expect(existsSync('.claude/skills/my-skill')).toBe(true)
+    expect(existsSync('.claude/skills/their-skill')).toBe(false)
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['.'].linked).toEqual(['skills/my-skill'])
+    expect(aiJson.packages['x/author']).toEqual({
+      version: 'v1.0.0',
+      linked: ['skills/their-skill', 'AGENTS.md'],
+    })
+  })
+
   it('errors before downloading when an installed package is added at a different version', async () => {
     await writeAiJson({
       packages: {

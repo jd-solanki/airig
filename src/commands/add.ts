@@ -186,6 +186,15 @@ async function pruneLocalOverrides(
   pruneLocalPackageOverrides(aiJson, localOverrides)
 }
 
+function remoteOwnedArtifacts(aiJson: AiJson): Set<string> {
+  const owned = new Set<string>()
+  for (const [key, entry] of Object.entries(aiJson.packages)) {
+    if (key === '.') continue
+    for (const artifact of entry.linked) owned.add(artifact)
+  }
+  return owned
+}
+
 async function runAddLocal(): Promise<void> {
   const aiJson = await readAiJson()
   aiJson.packages['.'] ??= { version: '*', linked: [] }
@@ -197,7 +206,11 @@ async function runAddLocal(): Promise<void> {
   }
 
   const currentLinked = aiJson.packages['.'].linked
+  // `.ai` also holds artifacts copied in by remote package installs; those are
+  // owned by their package, so `add .` must only offer the author's own files.
+  const remoteOwned = remoteOwnedArtifacts(aiJson)
   const selectable = (await listArtifacts('.ai', providers))
+    .filter(artifact => !remoteOwned.has(artifact))
     .filter(artifact => {
       if (!currentLinked.includes(artifact)) return true
       // Still offer artifacts that are missing symlinks for the selected providers
