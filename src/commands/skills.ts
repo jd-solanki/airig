@@ -9,7 +9,6 @@ import {
   writeAiJson,
   addPackage,
   packageSource,
-  type AiJson,
   type PackageEntry,
 } from '../lib/ai-json'
 import { resolveCommitSha, downloadRepoZipball } from '../lib/github'
@@ -17,7 +16,8 @@ import { parseSkillsRef } from '../lib/package-ref'
 import { resolveSkillsRepo, type ResolvedSkill } from '../lib/skill-resolver'
 import { withExtractedRepoZip, copyRepoSkillsToLocal } from '../lib/skills-repo'
 import { buildSkillSelectionChoices } from '../lib/skill-selection'
-import { findRemotePackageConflicts, unlinkFiles } from '../lib/linker'
+import { promptProviders } from '../lib/prompts'
+import { assertNoRemotePackageConflicts, unlinkFiles } from '../lib/linker'
 import { PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry'
 import {
   assertNoTargetConflicts,
@@ -70,20 +70,26 @@ export async function runSkillsAdd(pkg: string, options: SkillsAddOptions = {}):
     const available = discovered.filter(skill => !installedNames.has(skill.name))
     const selectors = skillSelectors(skillPath, options.skill)
 
+    // Resolve explicit selectors before prompting, so an unknown --skill or
+    // direct path fails immediately instead of after a pointless provider prompt.
+    const selectorSkills = selectors.length > 0
+      ? selectSkillsBySelectors(discovered, selectors, installedNames, packageKey)
+      : undefined
+    if (selectorSkills?.length === 0) return
+
     const providers = await promptProviders()
     if (providers.length === 0) {
       console.log('No providers selected.')
       return
     }
 
-    const selectedSkills = selectors.length > 0
-      ? selectSkillsBySelectors(discovered, selectors, installedNames, packageKey)
-      : await promptSkillSelection(available, currentLinked.length === 0, packageKey)
+    const selectedSkills = selectorSkills
+      ?? await promptSkillSelection(available, currentLinked.length === 0, packageKey)
     if (selectedSkills.length === 0) return
 
     const selectedLabels = selectedSkills.map(skill => labelForSkill(skill.name))
 
-    assertNoRemoteConflicts(aiJson, packageKey, providers, selectedLabels)
+    assertNoRemotePackageConflicts(aiJson, packageKey, providers, selectedLabels, 'airig remove')
     assertNoSkillSourceConflicts(packageKey, currentLinked, selectedLabels, scope)
     await assertNoSkillTargetConflicts(selectedLabels, providers, scope)
 
@@ -304,23 +310,6 @@ function assertSkillsRepoEntry(entry: PackageEntry, packageKey: string): void {
   }
 }
 
-function assertNoRemoteConflicts(
-  aiJson: AiJson,
-  packageKey: string,
-  providers: string[],
-  labels: string[],
-): void {
-  const conflicts = findRemotePackageConflicts(aiJson, packageKey, providers, labels)
-  if (conflicts.length === 0) return
-
-  throw diagnostics.AIRIG_R0005({
-    conflicts: conflicts
-      .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
-      .join('\n'),
-    command: 'airig remove',
-  })
-}
-
 function assertNoSkillSourceConflicts(
   packageKey: string,
   currentLinked: string[],
@@ -342,13 +331,6 @@ async function assertNoSkillTargetConflicts(labels: string[], providers: string[
     targetSourcePairs(scope.sourceRoot, scope.targetRoot, providers, labels),
     'skills add',
   )
-}
-
-async function promptProviders(): Promise<string[]> {
-  return checkbox({
-    message: 'Select providers to add:',
-    choices: Object.keys(PROVIDER_REGISTRY).map(provider => ({ value: provider, name: provider })),
-  })
 }
 
 function githubClient(): Octokit {

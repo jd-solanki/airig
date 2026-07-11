@@ -161,6 +161,29 @@ export function findRemotePackageConflicts(
   return conflicts
 }
 
+/**
+ * Throw `AIRIG_R0005` if any selected artifact's target is already owned by
+ * another remote package. `retryCommand` is the command surfaced to the User for
+ * clearing the conflict (e.g. `airig remove <owner/repo>`).
+ */
+export function assertNoRemotePackageConflicts(
+  aiJson: AiJson,
+  packageKey: string,
+  providers: string[],
+  artifactLabels: string[],
+  retryCommand: string,
+): void {
+  const conflicts = findRemotePackageConflicts(aiJson, packageKey, providers, artifactLabels)
+  if (conflicts.length === 0) return
+
+  throw diagnostics.AIRIG_R0005({
+    conflicts: conflicts
+      .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
+      .join('\n'),
+    command: retryCommand,
+  })
+}
+
 export function findLocalPackageOverrides(
   aiJson: AiJson,
   packageKey: string,
@@ -217,17 +240,8 @@ export async function reconcilePackageLinks(
   const currentLinked = aiJson.packages[packageKey].linked
   const preserved = currentLinked.filter(label => !scopedSet.has(label))
   const removed = currentLinked.filter(label => scopedSet.has(label) && !selectedSet.has(label))
-  const conflicts = findRemotePackageConflicts(aiJson, packageKey, providers, selected)
 
-  if (conflicts.length > 0) {
-    throw diagnostics.AIRIG_R0005({
-      conflicts: conflicts
-        .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
-        .join('\n'),
-      command: 'airig remove <owner/repo>',
-    })
-  }
-
+  assertNoRemotePackageConflicts(aiJson, packageKey, providers, selected, 'airig remove <owner/repo>')
   await assertNoTargetConflicts(providers, selected)
 
   const ownership = deriveTargetOwnership(aiJson)

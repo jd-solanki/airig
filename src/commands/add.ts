@@ -12,11 +12,12 @@ import {
   expandReleaseArtifactsWithSymlinkDependencies,
   withExtractedReleaseAi,
 } from '../lib/setup-release'
-import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry'
+import { listArtifacts, targetPathsForArtifact } from '../lib/provider-registry'
 import { buildSelectionChoices } from '../lib/skill-selection'
+import { promptProviders } from '../lib/prompts'
 import {
+  assertNoRemotePackageConflicts,
   findLocalPackageOverrides,
-  findRemotePackageConflicts,
   pruneLocalPackageOverrides,
   reconcilePackageLinks,
   unlinkFiles,
@@ -106,7 +107,7 @@ export async function runAdd(pkg: string, options: AddOptions = {}): Promise<voi
     const localOverridePlan = options.global
       ? planLocalOverrides(aiJson, packageKey, providers, selectedNew, scope)
       : emptyLocalOverridePlan()
-    assertNoRemoteConflicts(aiJson, packageKey, providers, selectedNew)
+    assertNoRemotePackageConflicts(aiJson, packageKey, providers, selectedNew, 'airig remove')
     await assertNoSourceConflicts(packageKey, currentLinked, artifactsToCopy, scope, localOverridePlan.targetPaths)
     await assertNoTargetConflicts(selectedNew, providers, scope, localOverridePlan.targetPaths)
     await pruneLocalOverrides(aiJson, scope, localOverridePlan.overrides)
@@ -297,30 +298,6 @@ async function runAddGlobalLocal(): Promise<void> {
   console.log(`\nAdded ${selectedNew.length} global local file(s).`)
 }
 
-async function promptProviders(): Promise<string[]> {
-  return checkbox({
-    message: 'Select providers to add:',
-    choices: Object.keys(PROVIDER_REGISTRY).map(p => ({ value: p, name: p })),
-  })
-}
-
-function assertNoRemoteConflicts(
-  aiJson: Awaited<ReturnType<typeof readAiJson>>,
-  packageKey: string,
-  providers: string[],
-  artifacts: string[],
-): void {
-  const conflicts = findRemotePackageConflicts(aiJson, packageKey, providers, artifacts)
-  if (conflicts.length === 0) return
-
-  throw diagnostics.AIRIG_R0005({
-    conflicts: conflicts
-      .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
-      .join('\n'),
-    command: 'airig remove',
-  })
-}
-
 async function assertNoTargetConflicts(
   artifacts: string[],
   providers: string[],
@@ -346,16 +323,7 @@ async function reconcileRemoteGlobalPackageLinks(
 
   const scope = resolveSetupScope({ global: true })
   const selected = [...new Set(selectedLabels)]
-  const conflicts = findRemotePackageConflicts(aiJson, packageKey, providers, selected)
-
-  if (conflicts.length > 0) {
-    throw diagnostics.AIRIG_R0005({
-      conflicts: conflicts
-        .map(({ targetPath, owner }) => `  ${targetPath}  (owned by ${owner.packageKey}@${owner.version})`)
-        .join('\n'),
-      command: 'airig remove',
-    })
-  }
+  assertNoRemotePackageConflicts(aiJson, packageKey, providers, selected, 'airig remove')
 
   const localOverridePlan = planLocalOverrides(aiJson, packageKey, providers, selected, scope)
   await assertNoTargetConflicts(selected, providers, scope, localOverridePlan.targetPaths)

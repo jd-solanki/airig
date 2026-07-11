@@ -173,6 +173,8 @@ describe('runSkillsAdd', () => {
     answerPrompts({ 'Select providers to add:': ['claude'] })
 
     await expect(runSkillsAdd('owner/skills/missing')).rejects.toThrow('Skill "missing" was not found')
+    // The unknown selector is caught before any prompt is shown.
+    expect(checkbox).not.toHaveBeenCalled()
   })
 
   it('adds more skills to an installed repo without moving the pinned SHA', async () => {
