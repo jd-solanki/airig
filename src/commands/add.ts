@@ -13,6 +13,7 @@ import {
   withExtractedReleaseAi,
 } from '../lib/setup-release'
 import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry'
+import { buildSelectionChoices } from '../lib/skill-selection'
 import {
   findLocalPackageOverrides,
   findRemotePackageConflicts,
@@ -91,11 +92,7 @@ export async function runAdd(pkg: string, options: AddOptions = {}): Promise<voi
 
     const selectedNew = await checkbox({
       message: 'Select files to add:',
-      choices: selectable.map(label => ({
-        value: label,
-        name: label,
-        checked: currentLinked.length === 0,
-      })),
+      choices: buildSelectionChoices(selectable, currentLinked.length === 0),
     })
     if (selectedNew.length === 0) {
       console.log('No files selected.')
@@ -224,7 +221,7 @@ async function runAddLocal(): Promise<void> {
 
   const selectedNew = await checkbox({
     message: 'Select local files to add:',
-    choices: selectable.map(label => ({ value: label, name: label, checked: true })),
+    choices: buildSelectionChoices(selectable, true),
   })
   if (selectedNew.length === 0) {
     console.log('No files selected.')
@@ -282,7 +279,7 @@ async function runAddGlobalLocal(): Promise<void> {
 
   const selectedNew = await checkbox({
     message: 'Select local files to add:',
-    choices: selectable.map(label => ({ value: label, name: label, checked: true })),
+    choices: buildSelectionChoices(selectable, true),
   })
   if (selectedNew.length === 0) {
     console.log('No files selected.')

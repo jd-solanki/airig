@@ -45,7 +45,7 @@ const SUPPORTED_PROVIDERS = [
 
 const GENERIC_AGENT_RULES = [
   { source: '.ai/AGENTS.md', target: 'AGENTS.md' },
-  { source: '.ai/skills', target: '.agents/skills' },
+  { source: '.ai/skills', target: '.agents/skills', flatten: true },
 ]
 
 describe('PROVIDER_REGISTRY', () => {
@@ -60,7 +60,7 @@ describe('PROVIDER_REGISTRY', () => {
       { source: '.ai/.claude/agents', target: '.claude/agents' },
       { source: '.ai/.claude/commands', target: '.claude/commands' },
       { source: '.ai/.claude/hooks', target: '.claude/hooks' },
-      { source: '.ai/skills', target: '.claude/skills' },
+      { source: '.ai/skills', target: '.claude/skills', flatten: true },
     ])
   })
 
@@ -94,11 +94,11 @@ describe('PROVIDER_REGISTRY', () => {
   it('uses provider-specific skill targets only when generic skills are not supported', () => {
     expect(PROVIDER_REGISTRY.cline.rules).toEqual([
       { source: '.ai/AGENTS.md', target: 'AGENTS.md' },
-      { source: '.ai/skills', target: '.cline/skills' },
+      { source: '.ai/skills', target: '.cline/skills', flatten: true },
     ])
     expect(PROVIDER_REGISTRY.kiro.rules).toEqual([
       { source: '.ai/AGENTS.md', target: 'AGENTS.md' },
-      { source: '.ai/skills', target: '.kiro/skills' },
+      { source: '.ai/skills', target: '.kiro/skills', flatten: true },
     ])
   })
 })
@@ -112,7 +112,7 @@ describe('rulesFor', () => {
     const rules = rulesFor(['claude'])
     expect(rules).toHaveLength(5) // CLAUDE.md + agents + commands + hooks + skills
     expect(rules[0].source).toBe('.ai/CLAUDE.md')
-    expect(rules[rules.length - 1]).toEqual({ source: '.ai/skills', target: '.claude/skills' })
+    expect(rules[rules.length - 1]).toEqual({ source: '.ai/skills', target: '.claude/skills', flatten: true })
   })
 
   it('includes all provider rules when all providers are given', () => {
@@ -144,6 +144,22 @@ describe('targetPathsForArtifact', () => {
     expect(targetPathsForArtifact('skills/tdd', ['cline', 'kiro'])).toEqual([
       '.cline/skills/tdd',
       '.kiro/skills/tdd',
+    ])
+  })
+
+  it('flattens a nested catalog skill to its leaf name in provider skill dirs', () => {
+    expect(targetPathsForArtifact('skills/coding/clean-code', ['claude'])).toEqual([
+      '.claude/skills/clean-code',
+    ])
+    expect(targetPathsForArtifact('skills/python/fastapi', ['codex', 'cline'])).toEqual([
+      '.agents/skills/fastapi',
+      '.cline/skills/fastapi',
+    ])
+  })
+
+  it('does not flatten non-skill directory artifacts', () => {
+    expect(targetPathsForArtifact('.claude/commands/group/review.md', ['claude'])).toEqual([
+      '.claude/commands/group/review.md',
     ])
   })
 })
@@ -181,6 +197,16 @@ describe('listArtifacts', () => {
 
     await expect(listArtifacts('.ai', ['pi', 'amp'])).resolves.toEqual([
       'AGENTS.md',
+      'skills/tdd',
+    ])
+  })
+
+  it('lists nested catalog skills by their real source path so the source is preserved', async () => {
+    await makeFile('.ai/skills/coding/clean-code/SKILL.md')
+    await makeFile('.ai/skills/tdd/SKILL.md')
+
+    await expect(listArtifacts('.ai', ['claude'])).resolves.toEqual([
+      'skills/coding/clean-code',
       'skills/tdd',
     ])
   })

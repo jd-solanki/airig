@@ -4,7 +4,10 @@ import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-vi.mock('@inquirer/prompts', () => ({ checkbox: vi.fn() }))
+vi.mock('@inquirer/prompts', async importActual => ({
+  ...(await importActual<typeof import('@inquirer/prompts')>()),
+  checkbox: vi.fn(),
+}))
 vi.mock('../src/lib/github', () => ({
   fetchReleaseInfo: vi.fn(),
   downloadAsset: vi.fn(),
@@ -237,6 +240,30 @@ describe('runAdd', () => {
     expect(existsSync('.agents/skills/tdd')).toBe(true)
     const aiJson = await readAiJson()
     expect(aiJson.packages['.'].linked).toEqual(['skills/tdd'])
+  })
+
+  it('flattens a nested catalog skill into flat provider skill dirs for add . without moving the source', async () => {
+    await makeFile('.ai/skills/coding/clean-code/SKILL.md', '# Clean Code')
+
+    vi.mocked(checkbox).mockImplementation(async prompt => {
+      const message = (prompt as { message: string }).message
+      if (message === 'Select providers to add:') return ['claude', 'codex']
+      if (message === 'Select local files to add:') return ['skills/coding/clean-code']
+      throw new Error(`Unexpected prompt: ${message}`)
+    })
+
+    await runAdd('.')
+
+    // Provider dirs expose the skill flat, where coding agents can discover it.
+    expect(existsSync('.claude/skills/clean-code')).toBe(true)
+    expect(existsSync('.agents/skills/clean-code')).toBe(true)
+    // The symlink resolves to the author's untouched nested source.
+    expect(await readlink('.claude/skills/clean-code')).toBe('../../.ai/skills/coding/clean-code')
+    expect(existsSync('.claude/skills/clean-code/SKILL.md')).toBe(true)
+    // The author's source tree is left exactly as authored.
+    expect(existsSync('.ai/skills/coding/clean-code/SKILL.md')).toBe(true)
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['.'].linked).toEqual(['skills/coding/clean-code'])
   })
 
   it('offers only author-created artifacts, not ones owned by remote packages, for add .', async () => {

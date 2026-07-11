@@ -1,9 +1,18 @@
 import { lstat, readdir } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+import { basename, join, relative } from 'node:path'
+import { resolveSkills } from './skill-resolver'
 
 export interface SymlinkRule {
   source: string
   target: string
+  /**
+   * When true, children of this directory source are exposed flat under the
+   * target: a source child at any depth links to `<target>/<leaf-name>`, not
+   * `<target>/<full-source-path>`. Used for skills, so a catalog layout
+   * (`skills/<category>/<name>`) still lands at `<target>/<name>` where coding
+   * agents can discover it. See the Skill Resolver.
+   */
+  flatten?: boolean
 }
 
 export interface ProviderEntry {
@@ -12,7 +21,7 @@ export interface ProviderEntry {
 }
 
 const AGENTS_INSTRUCTION_RULE: SymlinkRule = { source: '.ai/AGENTS.md', target: 'AGENTS.md' }
-const GENERIC_SKILLS_RULE: SymlinkRule = { source: '.ai/skills', target: '.agents/skills' }
+const GENERIC_SKILLS_RULE: SymlinkRule = { source: '.ai/skills', target: '.agents/skills', flatten: true }
 const GENERIC_AGENT_RULES: SymlinkRule[] = [
   AGENTS_INSTRUCTION_RULE,
   GENERIC_SKILLS_RULE,
@@ -39,7 +48,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
       { source: '.ai/.claude/agents', target: '.claude/agents' },
       { source: '.ai/.claude/commands', target: '.claude/commands' },
       { source: '.ai/.claude/hooks', target: '.claude/hooks' },
-      { source: '.ai/skills', target: '.claude/skills' },
+      { source: '.ai/skills', target: '.claude/skills', flatten: true },
     ],
   },
   codex: {
@@ -55,14 +64,14 @@ export const PROVIDER_REGISTRY: Record<string, ProviderEntry> = {
     name: 'cline',
     rules: [
       AGENTS_INSTRUCTION_RULE,
-      { source: '.ai/skills', target: '.cline/skills' },
+      { source: '.ai/skills', target: '.cline/skills', flatten: true },
     ],
   },
   kiro: {
     name: 'kiro',
     rules: [
       AGENTS_INSTRUCTION_RULE,
-      { source: '.ai/skills', target: '.kiro/skills' },
+      { source: '.ai/skills', target: '.kiro/skills', flatten: true },
     ],
   },
 }
@@ -82,7 +91,10 @@ export function targetPathsForArtifact(
     if (artifact === relSource) {
       targets.add(rule.target)
     } else if (artifact.startsWith(relSource + '/')) {
-      targets.add(join(rule.target, artifact.slice(relSource.length + 1)))
+      const childRel = artifact.slice(relSource.length + 1)
+      // A flatten rule exposes every child at its leaf name, collapsing any
+      // catalog nesting so `skills/coding/clean-code` targets `skills/clean-code`.
+      targets.add(join(rule.target, rule.flatten ? basename(childRel) : childRel))
     }
   }
 
@@ -116,6 +128,16 @@ export async function listArtifacts(rootDir: string, providers = Object.keys(PRO
 
     if (!sourceStat.isDirectory()) {
       artifacts.add(relSource)
+      continue
+    }
+
+    // A flatten rule (skills) is discovered by the Skill Resolver so catalog
+    // layouts surface each leaf Skill by its real source path; other directory
+    // sources list their immediate children as before.
+    if (rule.flatten) {
+      for (const skill of await resolveSkills(sourcePath)) {
+        artifacts.add(`${relSource}/${skill.sourceRelPath}`)
+      }
       continue
     }
 
