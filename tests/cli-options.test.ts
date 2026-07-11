@@ -26,13 +26,19 @@ describe('CLI options', () => {
     ).rejects.toMatchObject({ code: 'commander.unknownOption' })
   })
 
-  it('exposes skills add/update/remove subcommands, all project-scoped', () => {
+  it('exposes skills add/update/remove subcommands, each with --global', () => {
     const subcommands = skillsCommand.commands.map(command => command.name())
     expect(subcommands).toEqual(['add', 'update', 'remove'])
 
-    // Skills Repos are project-scoped in v1 — no --global on any subcommand.
     for (const command of skillsCommand.commands) {
-      expect(command.options.some(option => option.long === '--global')).toBe(false)
+      expect(command.options.some(option => option.long === '--global')).toBe(true)
     }
+  })
+
+  it('exposes a repeatable --skill selector only on skills add', () => {
+    const add = skillsCommand.commands.find(command => command.name() === 'add')
+    const update = skillsCommand.commands.find(command => command.name() === 'update')
+    expect(add?.options.some(option => option.long === '--skill')).toBe(true)
+    expect(update?.options.some(option => option.long === '--skill')).toBe(false)
   })
 })

@@ -41,7 +41,9 @@ airig remove [owner/repo|.]
 airig remove --global [owner/repo|stored-local-key]
 airig publish [tag]
 airig skills add <owner/repo>[@ref]
-airig skills add <owner/repo>/<skill>
+airig skills add https://github.com/<owner>/<repo>
+airig skills add <owner/repo> --skill <name>
+airig skills add --global <owner/repo>[@ref]
 airig skills update <owner/repo>[@ref]
 airig skills remove <owner/repo>
 ```
@@ -89,12 +91,17 @@ Use `add --global .` from an AI Setup source repository when you want to dogfood
 `airig skills add <owner/repo>` installs Skills directly from a bare skills-CLI (`skills.sh` / `vercel-labs/skills`) repository — no Setup Release, no `ai.zip`, no author action required. airig discovers Skills across the skills-CLI scan set, flattens catalog layouts into a flat `.ai/skills/`, links them into your providers, and pins the exact commit SHA in `.ai/ai.json` as a `skills-repo` source.
 
 ```sh
-airig skills add <owner/repo>            # latest default-branch commit
-airig skills add <owner/repo>@<ref>      # a branch, tag, or commit SHA
-airig skills add <owner/repo>/<skill>    # a single skill by name or path
-airig skills update <owner/repo>[@<ref>] # move the pin and refresh
-airig skills remove <owner/repo>         # interactively remove installed skills
+airig skills add <owner/repo>                 # latest default-branch commit
+airig skills add https://github.com/owner/repo # full GitHub URL (incl. /tree/<ref>/...)
+airig skills add <owner/repo>@<ref>           # a branch, tag, or commit SHA
+airig skills add <owner/repo>/<skill>         # a single skill by name or path
+airig skills add <owner/repo> --skill <name>  # named skills, non-interactive (repeatable)
+airig skills add --global <owner/repo>        # install into ~/.ai instead of the project
+airig skills update <owner/repo>[@<ref>]      # move the pin and refresh
+airig skills remove <owner/repo>              # interactively remove installed skills
 ```
+
+All three subcommands accept `--global` to manage Skills in your Global AI Setup at `~/.ai` instead of the current project.
 
 Because a Skills Repo has no immutable release to attest, the immutability gate does not apply — the pinned commit SHA gives reproducibility, not supply-chain immutability. Skills Repos are quarantined from core `add`/`update`, which continue to require immutable Setup Releases: each command refuses the other's kind.
 

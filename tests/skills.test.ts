@@ -28,12 +28,15 @@ const SHA_B = 'b'.repeat(40)
 
 let tmpDir: string
 let originalCwd: string
+let globalRoot: string
 
 beforeEach(async () => {
   originalCwd = process.cwd()
   tmpDir = await mkdtemp(path.join(os.tmpdir(), 'airig-skills-test-'))
+  globalRoot = path.join(tmpDir, 'home', '.ai')
   process.chdir(tmpDir)
   vi.resetAllMocks()
+  vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmpDir, 'home'))
   vi.spyOn(console, 'log').mockImplementation(() => {})
 })
 
@@ -68,6 +71,10 @@ function answerPrompts(answers: Record<string, string[]>): void {
     if (message in answers) return answers[message]
     throw new Error(`Unexpected prompt: ${message}`)
   })
+}
+
+function globalAiJsonPath(): string {
+  return path.join(globalRoot, 'ai.json')
 }
 
 describe('runSkillsAdd', () => {
@@ -207,6 +214,67 @@ describe('runSkillsAdd', () => {
     expect(downloadRepoZipball).not.toHaveBeenCalled()
   })
 
+  it('installs from a full GitHub URL', async () => {
+    const zip = await makeRepoZip('skills-abcdef', { 'skills/tdd/SKILL.md': '# TDD' })
+    vi.mocked(resolveCommitSha).mockResolvedValue(SHA_A)
+    vi.mocked(downloadRepoZipball).mockResolvedValue(zip)
+    answerPrompts({
+      'Select providers to add:': ['claude'],
+      'Select skills to add:': ['tdd'],
+    })
+
+    await runSkillsAdd('https://github.com/anthropics/skills')
+
+    expect(resolveCommitSha).toHaveBeenCalledWith('anthropics', 'skills', undefined, expect.any(Object))
+    expect(existsSync('.ai/skills/tdd/SKILL.md')).toBe(true)
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['anthropics/skills']).toEqual({
+      source: 'skills-repo', version: SHA_A, linked: ['skills/tdd'],
+    })
+  })
+
+  it('adds specific skills non-interactively via --skill', async () => {
+    const zip = await makeRepoZip('skills-abcdef', {
+      'skills/tdd/SKILL.md': '# TDD',
+      'skills/diagnose/SKILL.md': '# Diagnose',
+      'skills/unused/SKILL.md': '# Unused',
+    })
+    vi.mocked(resolveCommitSha).mockResolvedValue(SHA_A)
+    vi.mocked(downloadRepoZipball).mockResolvedValue(zip)
+    // Only the providers prompt should appear — never a skill-selection prompt.
+    answerPrompts({ 'Select providers to add:': ['claude'] })
+
+    await runSkillsAdd('owner/skills', { skill: ['tdd', 'diagnose'] })
+
+    expect(existsSync('.ai/skills/tdd/SKILL.md')).toBe(true)
+    expect(existsSync('.ai/skills/diagnose/SKILL.md')).toBe(true)
+    expect(existsSync('.ai/skills/unused/SKILL.md')).toBe(false)
+    const aiJson = await readAiJson()
+    expect(aiJson.packages['owner/skills'].linked).toEqual(['skills/tdd', 'skills/diagnose'])
+  })
+
+  it('installs into the global setup root with --global', async () => {
+    const zip = await makeRepoZip('skills-abcdef', { 'skills/tdd/SKILL.md': '# TDD' })
+    vi.mocked(resolveCommitSha).mockResolvedValue(SHA_A)
+    vi.mocked(downloadRepoZipball).mockResolvedValue(zip)
+    answerPrompts({
+      'Select providers to add:': ['claude'],
+      'Select skills to add:': ['tdd'],
+    })
+
+    await runSkillsAdd('owner/skills', { global: true })
+
+    expect(existsSync(path.join(globalRoot, 'skills/tdd/SKILL.md'))).toBe(true)
+    expect(existsSync(path.join(globalRoot, '.claude/skills/tdd'))).toBe(true)
+    expect(await readlink(path.join(globalRoot, '.claude/skills/tdd'))).toBe('../../skills/tdd')
+    expect(existsSync('.ai')).toBe(false)
+
+    const aiJson = await readAiJson(globalAiJsonPath())
+    expect(aiJson.packages['owner/skills']).toEqual({
+      source: 'skills-repo', version: SHA_A, linked: ['skills/tdd'],
+    })
+  })
+
   it('reports target conflicts before writing any skill sources', async () => {
     const zip = await makeRepoZip('skills-abcdef', { 'skills/tdd/SKILL.md': '# TDD' })
     vi.mocked(resolveCommitSha).mockResolvedValue(SHA_A)
@@ -252,6 +320,27 @@ describe('runSkillsUpdate', () => {
       version: SHA_B,
       linked: ['skills/tdd'],
     })
+  })
+
+  it('updates a globally installed skills repo', async () => {
+    await makeFile(path.join(globalRoot, 'skills/tdd/SKILL.md'), '# TDD old')
+    await mkdir(path.join(globalRoot, '.claude/skills'), { recursive: true })
+    await symlink('../../skills/tdd', path.join(globalRoot, '.claude/skills/tdd'))
+    await writeAiJson({
+      packages: {
+        'owner/skills': { source: 'skills-repo', version: SHA_A, linked: ['skills/tdd'] },
+      },
+    }, globalAiJsonPath())
+    const zip = await makeRepoZip('skills-bbbbbb', { 'skills/tdd/SKILL.md': '# TDD new' })
+    vi.mocked(resolveCommitSha).mockResolvedValue(SHA_B)
+    vi.mocked(downloadRepoZipball).mockResolvedValue(zip)
+
+    await runSkillsUpdate('owner/skills', { global: true })
+
+    expect(await readFile(path.join(globalRoot, 'skills/tdd/SKILL.md'), 'utf-8')).toBe('# TDD new')
+    expect(existsSync(path.join(globalRoot, '.claude/skills/tdd'))).toBe(true)
+    const aiJson = await readAiJson(globalAiJsonPath())
+    expect(aiJson.packages['owner/skills'].version).toBe(SHA_B)
   })
 })
 

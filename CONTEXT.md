@@ -239,7 +239,15 @@ airig add --global <owner/repo>[@version]
 airig add --global .
 airig update --global <owner/repo>@<version>
 airig remove --global [owner/repo|stored-local-key]
+
+airig skills add <owner/repo>[@<ref>]      # install Skills from a bare Skills Repo, pinned to a commit SHA
+airig skills add <owner/repo>/<skill>      # or a single Skill by name/path (also --skill <name>, repeatable)
+airig skills update <owner/repo>[@<ref>]   # re-resolve (default: HEAD) and refresh installed Skills
+airig skills remove <owner/repo>           # interactively remove installed Skills
+airig skills add|update|remove --global …  # same, against the Global AI Setup at ~/.ai
 ```
+
+A Skills Repo reference accepts the `owner/repo` shorthand or a full GitHub URL (`https://github.com/owner/repo`, including `/tree/<ref>/…`). `airig skills` operates only on `source: "skills-repo"` entries; core `add`/`update` operate only on Setup Releases; each refuses the other's kind.
 
 Public `link`, `check`, `sync`, and `list` are post-MVP.
 
