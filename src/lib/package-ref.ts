@@ -31,3 +31,42 @@ export function parseExactPackageRef(pkg: string): Required<PackageRef> {
   }
   return parsed as Required<PackageRef>
 }
+
+export interface SkillsRepoRef {
+  owner: string
+  repo: string
+  /** A branch, tag, or commit SHA; `undefined` selects the default branch HEAD. */
+  ref: string | undefined
+  /** A single-skill direct path (name or source path), or `undefined` for all. */
+  skillPath: string | undefined
+}
+
+/**
+ * Parse a Skills Repo reference. Unlike {@link parsePackageRef}, the segments
+ * after `owner/repo` are a direct-path selector for a single Skill, not part of
+ * the repo name: `owner/repo`, `owner/repo@ref`, `owner/repo/skill`, and
+ * `owner/repo/nested/skill@ref` are all valid.
+ */
+export function parseSkillsRef(pkg: string): SkillsRepoRef {
+  const atIdx = pkg.lastIndexOf('@')
+  let base = pkg
+  let ref: string | undefined
+
+  if (atIdx > 0) {
+    ref = pkg.slice(atIdx + 1)
+    base = pkg.slice(0, atIdx)
+  }
+
+  const segments = base.split('/').filter(segment => segment.length > 0)
+  if (segments.length < 2) {
+    throw diagnostics.AIRIG_C0001({ pkg })
+  }
+
+  const [owner, repo, ...skillSegments] = segments
+  return {
+    owner,
+    repo,
+    ref,
+    skillPath: skillSegments.length > 0 ? skillSegments.join('/') : undefined,
+  }
+}

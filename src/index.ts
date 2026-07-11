@@ -5,6 +5,7 @@ import { publishCommand } from './commands/publish'
 import { addCommand } from './commands/add'
 import { removeCommand } from './commands/remove'
 import { updateCommand } from './commands/update'
+import { skillsCommand } from './commands/skills'
 import { reportCliError } from './diagnostics'
 import packageJson from '../package.json' with { type: 'json' }
 
@@ -18,6 +19,7 @@ program.addCommand(publishCommand)
 program.addCommand(addCommand)
 program.addCommand(updateCommand)
 program.addCommand(removeCommand)
+program.addCommand(skillsCommand)
 
 try {
   await program.parseAsync()

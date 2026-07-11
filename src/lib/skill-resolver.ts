@@ -1,4 +1,5 @@
 import { readdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { diagnostics } from '../diagnostics'
 
@@ -36,28 +37,87 @@ export interface ResolvedSkill {
  */
 export async function resolveSkills(skillsDir: string): Promise<ResolvedSkill[]> {
   const leafRelPaths = await findSkillLeaves(skillsDir, '')
-  leafRelPaths.sort()
+  return assembleSkills(leafRelPaths.map(leafRel => skillFromContainer('', leafRel)))
+}
 
-  const skills: ResolvedSkill[] = []
-  const seen = new Map<string, string>()
+/**
+ * The skills-CLI scan set, mirrored exactly (see the Skill glossary in
+ * CONTEXT.md). Each entry is a container scanned like a `skills/` directory:
+ * one level deep for flat skills, two for catalog layouts. `.curated`,
+ * `.experimental`, and `.system` are transparent buckets, so they are scanned as
+ * their own containers *and* excluded from the plain `skills/` walk — otherwise a
+ * bucket skill would surface twice, once mislabeled with the bucket as its group.
+ */
+const SKILLS_REPO_CONTAINERS: ReadonlyArray<{ dir: string; excludeTopLevel?: readonly string[] }> = [
+  { dir: 'skills', excludeTopLevel: ['.curated', '.experimental', '.system'] },
+  { dir: 'skills/.curated' },
+  { dir: 'skills/.experimental' },
+  { dir: 'skills/.system' },
+  { dir: '.agents/skills' },
+  { dir: '.aider-desk/skills' },
+]
 
-  for (const sourceRelPath of leafRelPaths) {
-    const name = path.posix.basename(sourceRelPath)
-    const existing = seen.get(name)
-    if (existing !== undefined) {
-      throw diagnostics.AIRIG_R0022({ name, firstPath: existing, secondPath: sourceRelPath })
-    }
-    seen.set(name, sourceRelPath)
+/**
+ * Discover every Skill in a bare skills-CLI repository, applying the full scan
+ * set above and flattening each to its leaf `name`. A `SKILL.md` at the repo root
+ * makes the whole repo a single Skill named `repoName` (its `sourceRelPath` is
+ * `.`). Leaf-name collisions across any containers raise `AIRIG_R0022`, holding
+ * the one-flat-namespace-per-target invariant across the whole repo.
+ */
+export async function resolveSkillsRepo(repoRoot: string, repoName: string): Promise<ResolvedSkill[]> {
+  const leaves: ResolvedSkill[] = []
 
-    const parent = path.posix.dirname(sourceRelPath)
-    skills.push({
-      name,
-      sourceRelPath,
-      ...(parent === '.' ? {} : { group: parent }),
-    })
+  if (existsSync(path.join(repoRoot, 'SKILL.md'))) {
+    leaves.push({ name: repoName, sourceRelPath: '.' })
   }
 
-  return skills
+  for (const container of SKILLS_REPO_CONTAINERS) {
+    const containerAbs = path.join(repoRoot, container.dir)
+    const leafRelPaths = await findSkillLeaves(containerAbs, '', container.excludeTopLevel)
+    for (const leafRel of leafRelPaths) {
+      leaves.push(skillFromContainer(container.dir, leafRel))
+    }
+  }
+
+  return assembleSkills(leaves)
+}
+
+/**
+ * Build a `ResolvedSkill` from a leaf path relative to its scan container: the
+ * leaf's basename is the flattened `name`, its parent directory is the
+ * display-only `group`, and its path under the container joins onto `container`
+ * to form the repo-relative `sourceRelPath`.
+ */
+function skillFromContainer(container: string, leafRel: string): ResolvedSkill {
+  const name = path.posix.basename(leafRel)
+  const parent = path.posix.dirname(leafRel)
+  const sourceRelPath = container === '' ? leafRel : path.posix.join(container, leafRel)
+  return { name, sourceRelPath, ...(parent === '.' ? {} : { group: parent }) }
+}
+
+/**
+ * Sort skills by source path for deterministic output and reject any two that
+ * flatten to the same leaf `name` — a flat provider namespace cannot hold both.
+ */
+function assembleSkills(skills: ResolvedSkill[]): ResolvedSkill[] {
+  const sorted = [...skills].sort(bySourceRelPath)
+  const seen = new Map<string, string>()
+
+  for (const skill of sorted) {
+    const existing = seen.get(skill.name)
+    if (existing !== undefined) {
+      throw diagnostics.AIRIG_R0022({ name: skill.name, firstPath: existing, secondPath: skill.sourceRelPath })
+    }
+    seen.set(skill.name, skill.sourceRelPath)
+  }
+
+  return sorted
+}
+
+function bySourceRelPath(a: ResolvedSkill, b: ResolvedSkill): number {
+  if (a.sourceRelPath < b.sourceRelPath) return -1
+  if (a.sourceRelPath > b.sourceRelPath) return 1
+  return 0
 }
 
 /**
@@ -65,7 +125,11 @@ export async function resolveSkills(skillsDir: string): Promise<ResolvedSkill[]>
  * directory that directly contains a `SKILL.md`, descending through category
  * directories that do not. `relPath` accumulates the path walked so far.
  */
-async function findSkillLeaves(absDir: string, relPath: string): Promise<string[]> {
+async function findSkillLeaves(
+  absDir: string,
+  relPath: string,
+  excludeTopLevel?: readonly string[],
+): Promise<string[]> {
   let entries: Awaited<ReturnType<typeof readdir>>
   try {
     entries = await readdir(absDir, { withFileTypes: true })
@@ -80,6 +144,9 @@ async function findSkillLeaves(absDir: string, relPath: string): Promise<string[
   const leaves: string[] = []
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
+    // Exclusions apply only at the container top, where the special buckets sit;
+    // deeper directories are ordinary categories and are always descended.
+    if (relPath === '' && excludeTopLevel?.includes(entry.name)) continue
     const childRel = relPath === '' ? entry.name : path.posix.join(relPath, entry.name)
     leaves.push(...await findSkillLeaves(path.join(absDir, entry.name), childRel))
   }

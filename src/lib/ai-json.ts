@@ -3,9 +3,28 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { diagnostics } from '../diagnostics'
 
+/**
+ * How a package's artifacts are sourced and versioned.
+ *
+ * - `release` — an immutable Setup Release `ai.zip`, pinned by exact version tag
+ *   and governed by the Immutability Gate. This is the default when `source` is
+ *   absent, so pre-existing manifests validate unchanged.
+ * - `skills-repo` — a bare skills-CLI repository consumed directly from its Git
+ *   tree, pinned by exact commit SHA in `version`. The Immutability Gate does not
+ *   apply (ADR-0020). Operated on only by the `airig skills` subcommand.
+ */
+export type PackageSource = 'release' | 'skills-repo'
+
 export interface PackageEntry {
+  /** Absent means `release`; only skills-repo entries persist the field. */
+  source?: PackageSource
   version: string
   linked: string[]
+}
+
+/** The effective source of a package, defaulting an absent field to `release`. */
+export function packageSource(entry: PackageEntry): PackageSource {
+  return entry.source ?? 'release'
 }
 
 export interface AiJson {
@@ -36,6 +55,9 @@ function validate(data: unknown, aiJsonPath = AI_JSON_PATH): AiJson {
     if (key === '.' && entry.version !== '*') {
       throw diagnostics.AIRIG_C0006({ aiJsonPath })
     }
+    if (entry.source !== undefined && entry.source !== 'release' && entry.source !== 'skills-repo') {
+      throw diagnostics.AIRIG_C0013({ aiJsonPath, packageKey: key })
+    }
     if (entry.linked !== undefined && (
       !Array.isArray(entry.linked) ||
       entry.linked.some(label => typeof label !== 'string' || label.length === 0)
@@ -44,6 +66,9 @@ function validate(data: unknown, aiJsonPath = AI_JSON_PATH): AiJson {
     }
 
     packages[key] = {
+      // Only persist a non-default source so release and local entries round-trip
+      // byte-identically and pre-existing manifests are never rewritten with it.
+      ...(entry.source === 'skills-repo' ? { source: 'skills-repo' as const } : {}),
       version: entry.version,
       linked: entry.linked === undefined ? [] : [...entry.linked] as string[],
     }

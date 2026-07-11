@@ -55,6 +55,11 @@ export const diagnostics = /*#__PURE__*/ defineDiagnostics({
       why: 'GITHUB_TOKEN is not set. Add it to .env in this directory or export it before running publish.',
       fix: 'Set GITHUB_TOKEN, for example: GITHUB_TOKEN=ghp_...',
     },
+    AIRIG_C0013: {
+      why: (p: { aiJsonPath: string; packageKey: string }) =>
+        `${p.aiJsonPath} is malformed: package "${p.packageKey}" has an unknown source. Expected "release" or "skills-repo".`,
+      fix: 'Set source to "release" (or omit it) for a Setup Release, or "skills-repo" for a Skills Repo.',
+    },
     AIRIG_R0001: {
       why: (p: { packageKey: string; hint?: string }) =>
         `Package "${p.packageKey}" is not installed.${p.hint ? `\n  ${p.hint}` : ''}`,
@@ -158,6 +163,35 @@ export const diagnostics = /*#__PURE__*/ defineDiagnostics({
       why: (p: { name: string; firstPath: string; secondPath: string }) =>
         `Skill name collision: "${p.name}" appears at "${p.firstPath}" and "${p.secondPath}" in the package`,
       fix: 'Rename or remove one of the duplicate skills in the setup release.',
+    },
+    AIRIG_R0023: {
+      why: (p: { owner: string; repo: string; ref: string }) =>
+        `Could not resolve ${p.ref} in ${p.owner}/${p.repo}. The repository or ref was not found.`,
+      fix: 'Check the owner/repo spelling and that the branch, tag, or commit exists and is public.',
+    },
+    AIRIG_R0024: {
+      why: (p: { packageKey: string }) =>
+        `Package "${p.packageKey}" is a Skills Repo and cannot be managed with this command.`,
+      fix: 'Use airig skills <add|update|remove> for Skills Repos.',
+    },
+    AIRIG_R0025: {
+      why: (p: { packageKey: string }) =>
+        `Package "${p.packageKey}" is not a Skills Repo.`,
+      fix: 'Use airig add/update/remove for Setup Releases and local setups; airig skills is only for Skills Repos.',
+    },
+    AIRIG_R0026: {
+      why: (p: { skill: string; packageKey: string }) =>
+        `Skill "${p.skill}" was not found in ${p.packageKey}.`,
+      fix: 'List available skills by running airig skills add <owner/repo> without a skill path.',
+    },
+    AIRIG_R0027: {
+      why: (p: { packageKey: string; installedSha: string; requestedSha: string }) =>
+        `${p.packageKey} is already installed at ${p.installedSha}, not ${p.requestedSha}.`,
+      fix: 'Use airig skills update <owner/repo>[@<ref>] to move to a different commit.',
+    },
+    AIRIG_R0028: {
+      why: 'The downloaded repository archive did not contain a single top-level directory.',
+      fix: 'Retry the command; if it persists, the repository archive may be malformed.',
     },
   },
 })

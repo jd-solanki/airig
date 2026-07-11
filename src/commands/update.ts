@@ -2,7 +2,7 @@ import { Command } from 'commander'
 import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { Octokit } from '@octokit/rest'
-import { readAiJson, writeAiJson } from '../lib/ai-json'
+import { readAiJson, writeAiJson, packageSource } from '../lib/ai-json'
 import { fetchReleaseInfo, downloadAsset } from '../lib/github'
 import { parseExactPackageRef } from '../lib/package-ref'
 import { listArtifacts, PROVIDER_REGISTRY, targetPathsForArtifact } from '../lib/provider-registry'
@@ -34,6 +34,9 @@ export async function runUpdate(pkg: string, options: UpdateOptions = {}): Promi
       packageKey,
       hint: 'Install it first with: airig add <owner/repo>[@version]',
     })
+  }
+  if (packageSource(entry) === 'skills-repo') {
+    throw diagnostics.AIRIG_R0024({ packageKey })
   }
   if (entry.version === '*') {
     throw diagnostics.AIRIG_R0007({ packageKey })

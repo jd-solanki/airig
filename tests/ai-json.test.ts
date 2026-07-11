@@ -114,6 +114,43 @@ describe('readAiJson', () => {
       packages: { '../setup-repo': { version: '*', linked: [] } },
     })
   })
+
+  it('reads and preserves a skills-repo source pinned to a commit SHA', async () => {
+    const sha = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0'
+    const content: AiJson = {
+      packages: {
+        'vercel-labs/skills': { source: 'skills-repo', version: sha, linked: ['skills/find-skills'] },
+      },
+    }
+    await writeAiJson(content)
+
+    const data = await readAiJson()
+    expect(data).toEqual(content)
+    const raw = JSON.parse(await readFile('.ai/ai.json', 'utf-8'))
+    expect(raw.packages['vercel-labs/skills'].source).toBe('skills-repo')
+  })
+
+  it('does not add a source field to release or local entries', async () => {
+    await writeAiJson({
+      packages: {
+        '.': { version: '*', linked: [] },
+        'owner/repo': { version: '1.0.0', linked: [] },
+      },
+    })
+
+    const raw = JSON.parse(await readFile('.ai/ai.json', 'utf-8'))
+    expect(raw.packages['.']).not.toHaveProperty('source')
+    expect(raw.packages['owner/repo']).not.toHaveProperty('source')
+  })
+
+  it('rejects an unknown source value', async () => {
+    await mkdir('.ai', { recursive: true })
+    await writeFile('.ai/ai.json', JSON.stringify({
+      packages: { 'owner/repo': { source: 'registry', version: '1.0.0', linked: [] } },
+    }))
+
+    await expect(readAiJson()).rejects.toThrow('source')
+  })
 })
 
 describe('writeAiJson', () => {

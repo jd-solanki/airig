@@ -50,6 +50,50 @@ export async function downloadAsset(url: string): Promise<Buffer> {
   return Buffer.from(await response.arrayBuffer())
 }
 
+// ── Skills Repo path (bare Git tree, no release) ─────────────────────────
+
+/**
+ * Resolve a Skills Repo ref to the exact commit SHA that will be pinned in
+ * `ai.json`. A `ref` (branch, tag, or SHA) resolves through the commits endpoint;
+ * an absent ref takes the default branch's HEAD. A missing repo or ref surfaces
+ * as `AIRIG_R0023` rather than a raw GitHub 404.
+ */
+export async function resolveCommitSha(
+  owner: string,
+  repo: string,
+  ref: string | undefined,
+  octokit: Octokit,
+): Promise<string> {
+  try {
+    if (ref) {
+      const { data } = await octokit.repos.getCommit({ owner, repo, ref })
+      return data.sha
+    }
+    const { data } = await octokit.repos.listCommits({ owner, repo, per_page: 1 })
+    const sha = data[0]?.sha
+    if (!sha) throw diagnostics.AIRIG_R0023({ owner, repo, ref: 'HEAD' })
+    return sha
+  } catch (err) {
+    if (isNotFoundStatus(err)) throw diagnostics.AIRIG_R0023({ owner, repo, ref: ref ?? 'HEAD' })
+    throw err
+  }
+}
+
+/** Download the repository's zipball at an exact commit SHA. */
+export async function downloadRepoZipball(
+  owner: string,
+  repo: string,
+  sha: string,
+  octokit: Octokit,
+): Promise<Buffer> {
+  const response = await octokit.repos.downloadZipballArchive({ owner, repo, ref: sha })
+  return Buffer.from(response.data as ArrayBuffer)
+}
+
+function isNotFoundStatus(err: unknown): boolean {
+  return err != null && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 404
+}
+
 export function createOctokit(token: string): Octokit {
   return new Octokit({ auth: token })
 }

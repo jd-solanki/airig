@@ -1,5 +1,6 @@
 import { Separator } from '@inquirer/prompts'
 import path from 'node:path'
+import type { ResolvedSkill } from './skill-resolver'
 
 export interface ArtifactChoice {
   value: string
@@ -41,6 +42,37 @@ export function buildSelectionChoices(labels: string[], checked: boolean): Selec
   const choices: SelectionChoice[] = [...ungrouped]
   for (const group of [...byGroup.keys()].sort()) {
     choices.push(new Separator(`── ${SKILLS_PREFIX}${group} ──`))
+    choices.push(...byGroup.get(group) ?? [])
+  }
+  return choices
+}
+
+/**
+ * Build interactive-selection choices for Skills discovered in a Skills Repo,
+ * grouped under a labeled separator by their source category. The category comes
+ * from each Skill's display-only `group` (from the Skill Resolver), not from the
+ * flat install label, so grouping survives even though the installed result is a
+ * flat `skills/<name>`. Each choice's `value` is the Skill's leaf `name` — the
+ * identity a caller matches back to a `ResolvedSkill`.
+ */
+export function buildSkillSelectionChoices(skills: ResolvedSkill[], checked: boolean): SelectionChoice[] {
+  const ungrouped: ArtifactChoice[] = []
+  const byGroup = new Map<string, ArtifactChoice[]>()
+
+  for (const skill of skills) {
+    const choice: ArtifactChoice = { value: skill.name, name: skill.name, checked }
+    if (skill.group === undefined) {
+      ungrouped.push(choice)
+      continue
+    }
+    const choices = byGroup.get(skill.group) ?? []
+    choices.push(choice)
+    byGroup.set(skill.group, choices)
+  }
+
+  const choices: SelectionChoice[] = [...ungrouped]
+  for (const group of [...byGroup.keys()].sort()) {
+    choices.push(new Separator(`── ${group} ──`))
     choices.push(...byGroup.get(group) ?? [])
   }
   return choices

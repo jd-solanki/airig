@@ -4,7 +4,7 @@ import { checkbox } from '@inquirer/prompts'
 import { existsSync } from 'node:fs'
 import { lstat } from 'node:fs/promises'
 import path from 'node:path'
-import { readAiJson, writeAiJson, addPackage, type AiJson, type PackageEntry } from '../lib/ai-json'
+import { readAiJson, writeAiJson, addPackage, packageSource, type AiJson, type PackageEntry } from '../lib/ai-json'
 import { fetchReleaseInfo, downloadAsset } from '../lib/github'
 import { parsePackageRef } from '../lib/package-ref'
 import {
@@ -61,6 +61,9 @@ export async function runAdd(pkg: string, options: AddOptions = {}): Promise<voi
   const aiJson = await readAiJson(scope.aiJsonPath)
   const existingEntry = aiJson.packages[packageKey]
 
+  if (existingEntry && packageSource(existingEntry) === 'skills-repo') {
+    throw diagnostics.AIRIG_R0024({ packageKey })
+  }
   if (existingEntry && inputTag && inputTag !== existingEntry.version) {
     throw diagnostics.AIRIG_R0002({ packageKey, installedVersion: existingEntry.version })
   }

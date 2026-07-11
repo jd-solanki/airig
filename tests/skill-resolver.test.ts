@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { resolveSkills } from '../src/lib/skill-resolver'
+import { resolveSkills, resolveSkillsRepo } from '../src/lib/skill-resolver'
 
 let tmpDir: string
 
@@ -77,5 +77,70 @@ describe('resolveSkills', () => {
     await makeSkill('js/utils')
 
     await expect(resolveSkills(tmpDir)).rejects.toThrow(/collision.*utils/s)
+  })
+})
+
+describe('resolveSkillsRepo', () => {
+  it('returns an empty list for a repo with no discoverable skills', async () => {
+    await expect(resolveSkillsRepo(tmpDir, 'repo')).resolves.toEqual([])
+  })
+
+  it('treats a repo-root SKILL.md as a single skill named after the repo', async () => {
+    await writeFile(path.join(tmpDir, 'SKILL.md'), '# root skill')
+
+    await expect(resolveSkillsRepo(tmpDir, 'my-skill')).resolves.toEqual([
+      { name: 'my-skill', sourceRelPath: '.' },
+    ])
+  })
+
+  it('discovers flat and catalog skills under skills/', async () => {
+    await makeSkill('skills/tdd')
+    await makeSkill('skills/coding/clean-code')
+
+    await expect(resolveSkillsRepo(tmpDir, 'repo')).resolves.toEqual([
+      { name: 'clean-code', sourceRelPath: 'skills/coding/clean-code', group: 'coding' },
+      { name: 'tdd', sourceRelPath: 'skills/tdd' },
+    ])
+  })
+
+  it('scans the .curated/.experimental/.system buckets as transparent containers', async () => {
+    await makeSkill('skills/.curated/diagnose')
+    await makeSkill('skills/.experimental/wip')
+    await makeSkill('skills/.system/internal')
+
+    // Sorted by sourceRelPath: .curated < .experimental < .system.
+    await expect(resolveSkillsRepo(tmpDir, 'repo')).resolves.toEqual([
+      { name: 'diagnose', sourceRelPath: 'skills/.curated/diagnose' },
+      { name: 'wip', sourceRelPath: 'skills/.experimental/wip' },
+      { name: 'internal', sourceRelPath: 'skills/.system/internal' },
+    ])
+  })
+
+  it('does not double-count bucket skills as categories of skills/', async () => {
+    await makeSkill('skills/.curated/diagnose')
+
+    const resolved = await resolveSkillsRepo(tmpDir, 'repo')
+    // The skill surfaces once, from the .curated container — never also as a
+    // `.curated`-grouped catalog skill of the plain skills/ scan.
+    expect(resolved).toEqual([
+      { name: 'diagnose', sourceRelPath: 'skills/.curated/diagnose' },
+    ])
+  })
+
+  it('discovers agent-specific skill containers', async () => {
+    await makeSkill('.agents/skills/from-agents')
+    await makeSkill('.aider-desk/skills/from-aider')
+
+    await expect(resolveSkillsRepo(tmpDir, 'repo')).resolves.toEqual([
+      { name: 'from-agents', sourceRelPath: '.agents/skills/from-agents' },
+      { name: 'from-aider', sourceRelPath: '.aider-desk/skills/from-aider' },
+    ])
+  })
+
+  it('errors on a leaf-name collision across containers', async () => {
+    await makeSkill('skills/shared')
+    await makeSkill('.agents/skills/shared')
+
+    await expect(resolveSkillsRepo(tmpDir, 'repo')).rejects.toThrow(/collision.*shared/s)
   })
 })

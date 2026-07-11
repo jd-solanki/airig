@@ -40,6 +40,10 @@ airig update --global <owner/repo>@<version>
 airig remove [owner/repo|.]
 airig remove --global [owner/repo|stored-local-key]
 airig publish [tag]
+airig skills add <owner/repo>[@ref]
+airig skills add <owner/repo>/<skill>
+airig skills update <owner/repo>[@ref]
+airig skills remove <owner/repo>
 ```
 
 For one-off usage without a global install, run the npm Package directly:
@@ -54,6 +58,7 @@ npx @airig/cli update --global <owner/repo>@<version>
 npx @airig/cli remove [owner/repo|.]
 npx @airig/cli remove --global [owner/repo|stored-local-key]
 npx @airig/cli publish [tag]
+npx @airig/cli skills add <owner/repo>[@ref]
 ```
 
 The Package is named `@airig/cli`; the installed binary is `airig`.
@@ -78,6 +83,20 @@ airig remove --global [owner/repo|stored-local-key]
 Use `add --global .` from an AI Setup source repository when you want to dogfood local changes in your own global setup. airig records the source repository as a stored local key relative to `~/.ai`, so use that exact key with `remove --global <stored-local-key>` when removing it later.
 
 `publish` remains project-only and does not support `--global`. Authors share Global AI Setups by publishing the source setup repository, then installing or dogfooding that repository; `~/.ai` itself is not published directly.
+
+## Skills Repos
+
+`airig skills add <owner/repo>` installs Skills directly from a bare skills-CLI (`skills.sh` / `vercel-labs/skills`) repository — no Setup Release, no `ai.zip`, no author action required. airig discovers Skills across the skills-CLI scan set, flattens catalog layouts into a flat `.ai/skills/`, links them into your providers, and pins the exact commit SHA in `.ai/ai.json` as a `skills-repo` source.
+
+```sh
+airig skills add <owner/repo>            # latest default-branch commit
+airig skills add <owner/repo>@<ref>      # a branch, tag, or commit SHA
+airig skills add <owner/repo>/<skill>    # a single skill by name or path
+airig skills update <owner/repo>[@<ref>] # move the pin and refresh
+airig skills remove <owner/repo>         # interactively remove installed skills
+```
+
+Because a Skills Repo has no immutable release to attest, the immutability gate does not apply — the pinned commit SHA gives reproducibility, not supply-chain immutability. Skills Repos are quarantined from core `add`/`update`, which continue to require immutable Setup Releases: each command refuses the other's kind.
 
 ## Provider-Specific Artifacts
 
