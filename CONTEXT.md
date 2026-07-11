@@ -50,6 +50,34 @@ The public npm CLI Package named `@airig/cli` that provides the `airig` command.
 
 A versioned AI Setup published by an author on GitHub. Identified as `<owner>/<repo>` (e.g. `yourname/setup`). Distributed via GitHub immutable releases as an `ai.zip` asset. A Setup Release is created by `airig publish [tag]`; it is not an npm Package publication.
 
+### Skills Repo
+
+A GitHub repository that follows the skills-CLI (`skills.sh` / `vercel-labs/skills`) layout — one or more Skills discoverable in known container directories — with no Setup Release. airig consumes a Skills Repo **directly** from its Git tree via the `airig skills` subcommand, pinning it to an exact commit SHA. Contrast with a Setup Release, which is an immutable `ai.zip` asset. A Skills Repo is not published or verified by the author for airig; the Immutability Gate does not apply to it.
+_Avoid_: skills package, skill source, bare setup
+
+### Skill
+
+The atomic unit distributed by a Skills Repo: a directory containing a `SKILL.md` file. The whole directory travels together (its `SKILL.md` plus any `examples/`, `references/`, or scripts). airig discovers Skills by mirroring skills-CLI's scan set exactly — repo root (if it has `SKILL.md`), `skills/`, `skills/.curated/`, `skills/.experimental/`, `skills/.system/`, `.agents/skills/`, `.aider-desk/skills/` — walking one level deep for the flat layout (`skills/<name>/SKILL.md`) and two for catalog layouts (`skills/<category>/<name>/SKILL.md`).
+
+### Skill Resolver
+
+The single module that, given a source root, discovers every Skill and returns each as `{ name, sourceRelPath, group }`:
+
+- `name` — the flattened leaf directory name (`clean-code`); drives the flat provider link.
+- `sourceRelPath` — where the Skill actually lives in the source (`skills/coding/clean-code`); drives copy/link source.
+- `group` — the parent category under the scan container (`coding`), or none; **display-only**, drives grouped Interactive Selection.
+
+Every install path — Setup Release `add`, Skills Repo `airig skills add`, and local `add .` — goes through the Skill Resolver, so discovery and flattening behave identically regardless of source. It concentrates all catalog-walking, scan-set, leaf-flattening, and collision logic in one place. `group` is derived from the source on every `add`/`update` (remotes are re-fetched at the pinned ref), so it is never persisted into `.ai/`.
+
+### Skill Layout Invariants
+
+- **Skills are always flat in provider dirs.** A Skill named `clean-code` is always exposed at `.claude/skills/clean-code`, `.agents/skills/clean-code`, etc. — never nested under its source category. This is what makes catalog-layout Skills discoverable by coding agents.
+- **Interactive Selection is always grouped** by `group`, so a User can accept or reject a whole source category at once, even though the installed result is flat.
+- **`.ai/skills/` layout depends on the Skill's role**:
+  - **Remote** (Setup Release or Skills Repo) — flat `.ai/skills/<name>`. `.ai/` is airig's normalized install cache, which airig owns and flattens.
+  - **Local** (`add .`) — author-shaped, e.g. `.ai/skills/<group>/<name>`. `.ai/` is the Author's hand-organized source, which airig respects and never restructures; flattening happens only at the provider link.
+- **Leaf-name collisions across categories error** — flattening yields one flat namespace per target, so two Skills that flatten to the same `name` cannot both install; the User must resolve it. No last-write-wins.
+
 ### Provider
 
 An AI coding agent/tool that consumes the setup artifacts. Examples: `claude`, `codex`, `copilot`, `opencode`, `kiro`. Providers consume shared artifacts such as `AGENTS.md` and `skills/` when they support them, and use provider-specific source directories only for artifacts that need provider-native targets.
@@ -95,7 +123,23 @@ The single manifest file for project scope. Lives at `.ai/ai.json`. Declares whi
 }
 ```
 
-Manifest keys are either `"owner/repo"` (remote Setup Release) or a local setup root. Project `add .` uses `"."` as the local setup root because the source root and target root are the same repository. Global `add --global .` uses the relative path from `~/.ai/` to the current working repository root because the source root and target root are different. Local setup roots use `version: "*"` as a sentinel meaning "always current, no pinning." Both local and remote entries use the same `linked` list of source artifact labels — `.ai/`-relative artifacts that are installed and wired into provider target paths.
+A Skills Repo entry lives in the same `packages` map, distinguished by a `source: "skills-repo"` field, with `version` holding the pinned commit SHA:
+
+```json
+{
+  "packages": {
+    "vercel-labs/skills": {
+      "source": "skills-repo",
+      "version": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+      "linked": ["skills/find-skills", "skills/deploy-to-vercel"]
+    }
+  }
+}
+```
+
+The `source` field is optional and defaults to `"release"` (a Setup Release), so pre-existing `ai.json` files validate unchanged. Absent `source` with `version: "*"` remains a local setup root. A Skills Repo's `linked` labels are ordinary `.ai/`-relative artifact labels (`skills/<name>`), so target-ownership and Link Conflict detection treat them identically to Setup Release and local artifacts — a Skills Repo Skill and a Setup Release Skill that target the same provider path conflict as expected. The `source` discriminator only steers fetch, pinning, and the Immutability Gate: `airig skills` commands operate on `source: "skills-repo"` entries; core `add`/`update` operate on Setup Release entries; each refuses the other's kind.
+
+Manifest keys are either `"owner/repo"` (remote Setup Release or Skills Repo) or a local setup root. Project `add .` uses `"."` as the local setup root because the source root and target root are the same repository. Global `add --global .` uses the relative path from `~/.ai/` to the current working repository root because the source root and target root are different. Local setup roots use `version: "*"` as a sentinel meaning "always current, no pinning." Both local and remote entries use the same `linked` list of source artifact labels — `.ai/`-relative artifacts that are installed and wired into provider target paths.
 
 **Versions are always exact** for remote Setup Releases — no semver ranges. The CLI pins the exact version on `add` and only moves it on an explicit `update` command. `"*"` is only valid for local setup roots.
 
