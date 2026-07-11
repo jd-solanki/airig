@@ -1,61 +1,42 @@
-import { cp, mkdir, mkdtemp, readdir, readlink, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import extractZip from 'extract-zip'
 import { lstatIfExists } from './filesystem'
+import { resolveSkills } from './skill-resolver'
 import { diagnostics } from '../diagnostics'
 
-async function findSkillDirs(dir: string): Promise<string[]> {
-  let entries: { name: string; isFile(): boolean; isDirectory(): boolean }[]
-  try {
-    entries = await readdir(dir, { withFileTypes: true })
-  } catch {
-    return []
-  }
-
-  if (entries.some(e => e.isFile() && e.name === 'SKILL.md')) {
-    return [dir]
-  }
-
-  const results: string[] = []
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      results.push(...await findSkillDirs(path.join(dir, entry.name)))
-    }
-  }
-  return results
-}
-
+/**
+ * Normalize a release's `skills/` directory into a flat `<name>/` layout,
+ * collapsing catalog layouts (`<category>/<name>/SKILL.md`) so the copied-in
+ * `.ai/skills/` is a clean, browsable list of Skills.
+ *
+ * The flattened Skills are staged into a sibling directory and swapped in
+ * atomically, rather than copied in place. In-place copying merges a leaf Skill
+ * into a same-named category directory (`coding/coding` → `coding`), leaving the
+ * category's other children nested underneath — which is exactly what buries a
+ * Skill too deep for a coding agent to discover. A leaf-name collision raises
+ * `AIRIG_R0022` before anything is swapped.
+ */
 async function flattenSkills(skillsDir: string): Promise<void> {
-  const skillDirs = await findSkillDirs(skillsDir)
+  const skills = await resolveSkills(skillsDir)
+  if (skills.every(skill => skill.sourceRelPath === skill.name)) return
 
-  const names = new Map<string, string>()
-  for (const dir of skillDirs) {
-    const name = path.basename(dir)
-    if (names.has(name)) {
-      throw diagnostics.AIRIG_R0022({
-        name,
-        firstPath: names.get(name) ?? '',
-        secondPath: dir,
-      })
-    }
-    names.set(name, dir)
+  const stagingDir = `${skillsDir}.airig-flat`
+  await rm(stagingDir, { recursive: true, force: true })
+  await mkdir(stagingDir, { recursive: true })
+
+  for (const skill of skills) {
+    await cp(
+      path.join(skillsDir, skill.sourceRelPath),
+      path.join(stagingDir, skill.name),
+      { recursive: true, verbatimSymlinks: true },
+    )
   }
 
-  for (const dir of skillDirs) {
-    const dest = path.join(skillsDir, path.basename(dir))
-    if (dir !== dest) {
-      await cp(dir, dest, { recursive: true })
-    }
-  }
-
-  const topEntries = await readdir(skillsDir, { withFileTypes: true })
-  for (const entry of topEntries) {
-    if (entry.isDirectory() && !names.has(entry.name)) {
-      await rm(path.join(skillsDir, entry.name), { recursive: true, force: true })
-    }
-  }
+  await rm(skillsDir, { recursive: true, force: true })
+  await rename(stagingDir, skillsDir)
 }
 
 export async function withExtractedReleaseAi<T>(
